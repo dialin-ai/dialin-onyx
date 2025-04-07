@@ -167,6 +167,7 @@ def load_personas_from_yaml(
                 if existing_persona is not None
                 else persona.get("is_default_persona", False)
             ),
+            pro_search_enabled=(persona.get("pro_search_enabled", False))
         )
 
 

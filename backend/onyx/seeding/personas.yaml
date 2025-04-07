@@ -130,3 +130,22 @@ personas:
         message: "I want to add a search bar to my Iphone app. Generate me generic examples of how other apps implement this."
       - name: "Generate a humorous image response"
         message: "My teammate just made a silly mistake and I want to respond with a facepalm. Can you generate me one?"
+
+  - id: 4
+    name: "Frame"
+    description: >
+      Compliance-focused assistant that helps analyze documents, generate structured responses, and manage compliance-related workflows.
+    prompts:
+      - "Answer-Question"
+    num_chunks: 10
+    llm_relevance_filter: true
+    llm_filter_extraction: true
+    recency_bias: "auto"
+    document_sets: []
+    icon_shape: 50911
+    icon_color: "#4A90E2"
+    display_priority: 4
+    is_visible: true
+    is_default_persona: true
+    pro_search_enabled: true
+    starter_messages: []

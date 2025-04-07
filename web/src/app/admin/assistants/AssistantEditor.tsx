@@ -129,6 +129,11 @@ export function AssistantEditor({
   shouldAddAssistantToUserPreferences?: boolean;
   admin?: boolean;
 }) {
+  console.log("existingPersona", existingPersona);
+  console.log("existingPersona keys:", Object.keys(existingPersona || {}));
+  console.log("existingPersona pro_search_enabled:", existingPersona?.pro_search_enabled);
+  console.log("existingPersona JSON:", JSON.stringify(existingPersona, null, 2));
+
   const { refreshAssistants, isImageGenerationAvailable } = useAssistants();
   const router = useRouter();
   const searchParams = useSearchParams();

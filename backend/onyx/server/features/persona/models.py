@@ -101,6 +101,7 @@ class PersonaSnapshot(BaseModel):
     llm_filter_extraction: bool
     llm_model_provider_override: str | None
     llm_model_version_override: str | None
+    pro_search_enabled: bool
     starter_messages: list[StarterMessage] | None
     builtin_persona: bool
     prompts: list[PromptSnapshot]
@@ -143,6 +144,7 @@ class PersonaSnapshot(BaseModel):
             llm_filter_extraction=persona.llm_filter_extraction,
             llm_model_provider_override=persona.llm_model_provider_override,
             llm_model_version_override=persona.llm_model_version_override,
+            pro_search_enabled=persona.pro_search_enabled,
             starter_messages=persona.starter_messages,
             builtin_persona=persona.builtin_persona,
             is_default_persona=persona.is_default_persona,
