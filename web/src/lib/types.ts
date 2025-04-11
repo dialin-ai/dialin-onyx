@@ -18,23 +18,23 @@ interface UserPreferences {
 export enum UserRole {
   LIMITED = "limited",
   BASIC = "basic",
+  DEMO = "demo",
   ADMIN = "admin",
   CURATOR = "curator",
   GLOBAL_CURATOR = "global_curator",
   EXT_PERM_USER = "ext_perm_user",
   SLACK_USER = "slack_user",
-  DEMO = "demo",
 }
 
 export const USER_ROLE_LABELS: Record<UserRole, string> = {
   [UserRole.BASIC]: "Basic",
+  [UserRole.DEMO]: "Demo",
   [UserRole.ADMIN]: "Admin",
   [UserRole.GLOBAL_CURATOR]: "Global Curator",
   [UserRole.CURATOR]: "Curator",
   [UserRole.LIMITED]: "Limited",
   [UserRole.EXT_PERM_USER]: "External Permissioned User",
   [UserRole.SLACK_USER]: "Slack User",
-  [UserRole.DEMO]: "Demo",
 };
 
 export const INVALID_ROLE_HOVER_TEXT: Partial<Record<UserRole, string>> = {

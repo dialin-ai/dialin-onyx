@@ -752,11 +752,12 @@ export function ChatInputBar({
 
             <div className="flex pr-4 pb-2 justify-between bg-input-background items-center w-full ">
               <div className="space-x-1 flex  px-4 ">
-                <ChatInputOption
-                  flexPriority="stiff"
-                  name="File"
-                  Icon={FiPlusCircle}
-                  onClick={() => {
+                {!isDemoUser && (
+                  <ChatInputOption
+                    flexPriority="stiff"
+                    name="File"
+                    Icon={FiPlusCircle}
+                    onClick={() => {
                     const input = document.createElement("input");
                     input.type = "file";
                     input.multiple = true;
@@ -764,14 +765,15 @@ export function ChatInputBar({
                       const files = Array.from(
                         event?.target?.files || []
                       ) as File[];
-                      if (files.length > 0) {
-                        handleFileUpload(files);
-                      }
-                    };
-                    input.click();
-                  }}
-                  tooltipContent={"Upload files"}
-                />
+                        if (files.length > 0) {
+                          handleFileUpload(files);
+                        }
+                      };
+                      input.click();
+                    }}
+                    tooltipContent={"Upload files"}
+                  />
+                )}
 
                 {!isDemoUser && (
                   <LLMPopover
@@ -782,23 +784,21 @@ export function ChatInputBar({
                   />
                 )}
 
-                {retrievalEnabled && !isDemoUser && (
-                  <FilterPopup
-                    availableSources={availableSources}
-                    availableDocumentSets={availableDocumentSets}
-                    availableTags={availableTags}
-                    filterManager={filterManager}
-                    trigger={
-                      <ChatInputOption
-                        flexPriority="stiff"
-                        name="Filters"
-                        Icon={FiFilter}
-                        toggle
-                        tooltipContent="Filter your search"
-                      />
-                    }
-                  />
-                )}
+                <FilterPopup
+                  availableSources={availableSources}
+                  availableDocumentSets={availableDocumentSets}
+                  availableTags={availableTags}
+                  filterManager={filterManager}
+                  trigger={
+                    <ChatInputOption
+                      flexPriority="stiff"
+                      name="Filters"
+                      Icon={FiFilter}
+                      toggle
+                      tooltipContent="Filter your search"
+                    />
+                  }
+                />
               </div>
               <div className="flex items-center my-auto">
                 <button

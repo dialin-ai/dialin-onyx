@@ -118,7 +118,7 @@ export function UserDropdown({
   };
 
   const showAdminPanel = !user || user.role === UserRole.ADMIN;
-  const showDemoMode = !user || user.role === UserRole.ADMIN;
+  const showDemoMode = user?.role === UserRole.DEMO;
 
   const showCuratorPanel = user && isCurator;
   const showLogout =
