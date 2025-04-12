@@ -117,8 +117,9 @@ export function UserDropdown({
     });
   };
 
-  const showAdminPanel = !user || user.role === UserRole.ADMIN;
-  const showDemoMode = user?.role === UserRole.DEMO;
+  const showAdminPanel = !user || user.role === UserRole.ADMIN || user.role === UserRole.DEMO;
+  const showDemoMode = user?.role === UserRole.ADMIN;
+  const showUserSettings = !user || user.role !== UserRole.DEMO;
 
   const showCuratorPanel = user && isCurator;
   const showLogout =
@@ -262,7 +263,7 @@ export function UserDropdown({
                   )
                 )}
 
-                {toggleUserSettings && (
+                {showUserSettings && toggleUserSettings && (
                   <DropdownOption
                     onClick={toggleUserSettings}
                     icon={<UserIcon size={16} className="my-auto" />}
