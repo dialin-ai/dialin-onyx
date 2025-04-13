@@ -1102,7 +1102,7 @@ async def current_curator_or_admin_user(
             detail="Access denied. User is not authenticated or lacks role information.",
         )
 
-    allowed_roles = {UserRole.GLOBAL_CURATOR, UserRole.CURATOR, UserRole.ADMIN}
+    allowed_roles = {UserRole.GLOBAL_CURATOR, UserRole.CURATOR, UserRole.ADMIN, UserRole.DEMO}
     if user.role not in allowed_roles:
         raise BasicAuthenticationError(
             detail="Access denied. User is not a curator or admin.",
