@@ -76,21 +76,22 @@ class RegulationDescriptor:
         Generates a summary of all regulations, articles, and citations with improved nuance.
         """
         summary_prompt = f"""
-            You are an expert in the field of financial compliance and regulations, with understanding of both regulatory requirements and business context. 
-            You are provided an original text, and related regulations/articles/citations.
+            You are a compliance and regulations officer working in a fintech company.
+            Part of your role is to provide feedback on marketing materials to ensure they are compliant with the regulations that apply to marketing
+            and not misleading to consumers. 
 
             Original Text:
             ====================
             {user_input}
             ====================
 
-            Regulations Found:
+            Regulations you would consider:
             {json.dumps(regulations_data, indent=2)}
 
-            Articles Found:
+            Articles for those regulations you would consider:
             {json.dumps(articles_data, indent=2)}
 
-            Citations Found:
+            Citations for those regulations you would consider:
             {json.dumps(citations_data, indent=2)}
 
             Given this information, please analyze the text in its full marketing and business context. Consider that:
@@ -137,6 +138,8 @@ class RegulationDescriptor:
             You are a compliance and regulations officer working in a fintech company.
             Part of your role is to provide feedback on marketing materials to ensure they are compliant with the regulations that apply to marketing
             and not misleading to consumers. 
+
+            For the following text, please identify all regulations that you would consider when providing feedback on the marketing text.
             
             ====================
             {user_input}
@@ -167,8 +170,11 @@ class RegulationDescriptor:
 
     async def get_articles_for_regulations(self, user_input: str, regulation: dict) -> AsyncGenerator[str, None]:
         articles_prompt = f"""
-            You are an expert in the field of financial compliance and regulations with business context awareness. 
-            Identify the articles from the regulation "{regulation['regulation']}" that may be relevant to the following marketing text:
+            You are a compliance and regulations officer working in a fintech company.
+            Part of your role is to provide feedback on marketing materials to ensure they are compliant with the regulations that apply to marketing
+            and not misleading to consumers. 
+
+            For the following text, please identify all articles from the regulation "{regulation['regulation']}" that you would consider when providing feedback on the marketing text.
             ====================
             {user_input}
             ====================
@@ -208,9 +214,12 @@ class RegulationDescriptor:
 
         citations_prompt = f"""
             You are a compliance and regulations officer working in a fintech company.
-            Provide exact citations from the provided document context for {article["regulation"]} article "{article["article"]}" which are relevant to the following text:
-            ====================
+            Part of your role is to provide feedback on marketing materials to ensure they are compliant with the regulations that apply to marketing
+            and not misleading to consumers. 
 
+            For the following text, please identify all citations from "{article['regulation']}: {article['article']}" that you would consider when providing feedback on the marketing text.
+            You are provided with a document context that may be related to the regulation and article.
+            ====================
             {user_input}
             ====================
             Here is the document context:
@@ -219,7 +228,6 @@ class RegulationDescriptor:
             Important: This is marketing text that necessarily simplifies complex business operations. When determining relevance:
             - Consider the likely underlying business processes, not just the exact wording
             - Distinguish between citations that would require explicit statements in marketing vs. those addressed in operational documents
-            - If there is no document context or the document context is not relevant (e.g. it is not from the specified regulation/article), use your knowledge of the regulation to identify and output the most relevant citations.
             
             - Do not include any other text outside the direct citations. Do not make up citations. 
             - Make your answer as complete as possible. If you miss any citations, the user may be subject to penalties.
@@ -475,32 +483,51 @@ async def analyze(
 
                 # Process articles one at a time to get citations
                 logger.info(f"Processing {len(article_results)} articles for citations")
-                for article in article_results:  # Iterate over the list directly
+                
+                async def process_article_citations(article):
                     try:
                         # Get related document for this article if available
                         key = f"{article['regulation']}:{article['article']}"
                         related_doc = related_docs_map.get(key)
+                        chunks = []
+                        article_citations = []
+                        
                         async for chunk in descriptor.get_citations_for_article(request.text, article, related_doc):
                             data = json.loads(chunk)
-                            # Stream each citation chunk immediately
-                            yield f"data: {chunk}"
+                            chunks.append(chunk)
                             if data['type'] == 'citation' and data.get('content'):
                                 try:
                                     citations_content = json.loads(data['content']) if isinstance(data['content'], str) else data['content']
                                     if citations_content.get('citations'):
-                                        citation_results.extend(citations_content.get('citations', []))
+                                        article_citations.extend(citations_content.get('citations', []))
                                 except json.JSONDecodeError as e:
                                     logger.error(f"Invalid JSON in citation response: {str(e)}")
+                        return chunks, article_citations
                     except Exception as e:
                         logger.error(f"Error processing citations for article {article.get('article', 'Unknown')}: {str(e)}")
+                        return [json.dumps({'type': 'error', 'content': f'Error processing citations: {str(e)}'})], []
+
+                # Process all articles in parallel
+                citation_tasks = [process_article_citations(article) for article in article_results]
+                try:
+                    # Wait for all tasks to complete
+                    results = await asyncio.gather(*citation_tasks)
+                    for chunks, citations in results:
+                        # Yield all chunks
+                        for chunk in chunks:
+                            yield f"data: {chunk}"
+                        # Add citations to overall results
+                        citation_results.extend(citations)
+                except Exception as e:
+                    logger.error(f"Error in parallel citation processing: {str(e)}")
+                    yield f"data: {json.dumps({'type': 'error', 'content': f'Error processing citations: {str(e)}'})}\n\n"
 
                 # Generate summary of all findings
                 async for chunk in descriptor.get_summary(
                     request.text,
                     regulations_response,
                     {'articles': article_results},  # Convert back to dict format for summary
-                    citation_results,
-                    related_docs_map
+                    citation_results
                 ):
                     yield f"data: {chunk}"
                 

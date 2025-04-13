@@ -17,6 +17,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { useTheme } from 'next-themes';
+import { Sidebar } from '@/components/navigation/Sidebar';
 
 const API_URL = `${APP_BASE_URL}/regulation-analysis/analyze`;
 
@@ -523,76 +524,77 @@ function MarketingAnalysis() {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-background">
-      <div className="flex-1 overflow-auto">
-        <div className="container max-w-4xl mx-auto px-4 py-8">
-          <div className="space-y-4">
-            {messages.map(message => (
-              <Card key={message.id} className={`p-4 ${
-                message.type === 'user' ? 'bg-primary/10' : 'bg-card'
-              }`}>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="font-medium text-foreground">
-                    {message.type === 'user' ? 'You' : 'Analysis'}
-                  </span>
-                  <span className="text-sm text-muted-foreground">
-                    {message.timestamp.toLocaleTimeString()}
-                  </span>
-                </div>
-                {message.type === 'user' ? (
-                  message.analysis ? (
-                    renderAnalysis(message.analysis)
-                  ) : (
-                    <p className="text-foreground">{message.text}</p>
-                  )
-                ) : (
-                  <div>
-                    <p className="text-foreground">{message.text}</p>
-                    {message.analysis && message.analysis.length > 0 && renderAnalysis(message.analysis)}
+    <div className="flex h-screen bg-background">
+      <Sidebar />
+      <div className="flex-1 flex flex-col">
+        <div className="flex-1 overflow-auto">
+          <div className="container max-w-4xl mx-auto px-4 py-8">
+            <div className="space-y-4">
+              {messages.map(message => (
+                <Card key={message.id} className={`p-4 ${
+                  message.type === 'user' ? 'bg-primary/10' : 'bg-card'
+                }`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-medium text-foreground">
+                      {message.type === 'user' ? 'You' : 'Analysis'}
+                    </span>
+                    <span className="text-sm text-muted-foreground">
+                      {message.timestamp.toLocaleTimeString()}
+                    </span>
                   </div>
-                )}
-              </Card>
-            ))}
-            <div ref={messagesEndRef} />
+                  {message.type === 'user' ? (
+                    message.analysis ? (
+                      renderAnalysis(message.analysis)
+                    ) : (
+                      <p className="text-foreground">{message.text}</p>
+                    )
+                  ) : (
+                    <div>
+                      <p className="text-foreground">{message.text}</p>
+                      {message.analysis && message.analysis.length > 0 && renderAnalysis(message.analysis)}
+                    </div>
+                  )}
+                </Card>
+              ))}
+              <div ref={messagesEndRef} />
+            </div>
           </div>
         </div>
-      </div>
 
-      <div className="border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="container mx-auto px-8 py-6 flex justify-center">
-          <form onSubmit={handleSubmit} className="w-[60%]">
-            <div className="flex w-full gap-4">
-              <Textarea
-                value={input}
-                onChange={e => {
-                  setInput(e.target.value);
-                  // Reset height to auto first to properly calculate scrollHeight
-                  e.target.style.height = 'auto';
-                  // Set new height based on scrollHeight
-                  const newHeight = Math.max(44, e.target.scrollHeight); // 44px = 2.75rem (base height)
-                  e.target.style.height = `${newHeight}px`;
-                }}
-                placeholder="Enter text to analyze..."
-                disabled={isLoading}
-                className="flex-1 text-base px-4 py-2 min-w-0 h-[2.75rem] resize-none overflow-hidden leading-normal"
-                onKeyDown={e => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSubmit(e);
-                  }
-                }}
-              />
-              <Button 
-                type="submit" 
-                disabled={isLoading}
-                variant="default"
-                size="lg"
-                className="px-8 whitespace-nowrap self-end h-[2.75rem]"
-              >
-                {isLoading ? 'Analyzing...' : 'Analyze'}
-              </Button>
-            </div>
-          </form>
+        <div className="border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+          <div className="container mx-auto px-8 py-6 flex justify-center">
+            <form onSubmit={handleSubmit} className="w-[60%]">
+              <div className="flex w-full gap-4">
+                <Textarea
+                  value={input}
+                  onChange={e => {
+                    setInput(e.target.value);
+                    e.target.style.height = 'auto';
+                    const newHeight = Math.max(44, e.target.scrollHeight);
+                    e.target.style.height = `${newHeight}px`;
+                  }}
+                  placeholder="Enter text to analyze..."
+                  disabled={isLoading}
+                  className="flex-1 text-base px-4 py-2 min-w-0 h-[2.75rem] resize-none overflow-hidden leading-normal"
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSubmit(e);
+                    }
+                  }}
+                />
+                <Button 
+                  type="submit" 
+                  disabled={isLoading}
+                  variant="default"
+                  size="lg"
+                  className="px-8 whitespace-nowrap self-end h-[2.75rem]"
+                >
+                  {isLoading ? 'Analyzing...' : 'Analyze'}
+                </Button>
+              </div>
+            </form>
+          </div>
         </div>
       </div>
     </div>
