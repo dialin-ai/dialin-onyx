@@ -31,7 +31,7 @@ router = APIRouter(prefix="/manage")
 @router.post("/admin/document-set")
 def create_document_set(
     document_set_creation_request: DocumentSetCreationRequest,
-    user: User = Depends(current_curator_or_admin_user),
+    user: User = Depends(current_user),
     db_session: Session = Depends(get_session),
     tenant_id: str = Depends(get_current_tenant_id),
 ) -> int:
@@ -64,7 +64,7 @@ def create_document_set(
 @router.patch("/admin/document-set")
 def patch_document_set(
     document_set_update_request: DocumentSetUpdateRequest,
-    user: User = Depends(current_curator_or_admin_user),
+    user: User = Depends(current_user),
     db_session: Session = Depends(get_session),
     tenant_id: str = Depends(get_current_tenant_id),
 ) -> None:
@@ -95,7 +95,7 @@ def patch_document_set(
 @router.delete("/admin/document-set/{document_set_id}")
 def delete_document_set(
     document_set_id: int,
-    user: User = Depends(current_curator_or_admin_user),
+    user: User = Depends(current_user),
     db_session: Session = Depends(get_session),
     tenant_id: str = Depends(get_current_tenant_id),
 ) -> None:
