@@ -17,6 +17,7 @@ import { FileUpload } from "@/components/admin/connectors/FileUpload";
 import { createConnector } from "@/lib/connector";
 import { createCredential, linkCredential } from "@/lib/credential";
 import { FileConfig } from "@/lib/connectors/connectors";
+import { useUser } from "@/components/user/UserProvider";
 
 interface SetCreationPopupProps {
   onClose: () => void;
@@ -32,6 +33,7 @@ export const DemoDocumentUploadForm = ({
   const isUpdate = existingDocumentSet !== undefined;
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const { user } = useUser();
 
   return (
     <div className="max-w-full mx-auto">
@@ -164,11 +166,12 @@ export const DemoDocumentUploadForm = ({
 
             const cc_pair_id = (await linkResponse.json()).data;
 
-            // Now create the document set with the CC pair
+            // Now create the document set with the CC pair and ensure the current user has access
             const processedValues = {
               ...values,
               cc_pair_ids: [cc_pair_id],
               is_public: false,
+              users: user?.email ? [...values.users, user.email] : values.users,
               groups: values.groups,
             };
 
