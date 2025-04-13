@@ -1,0 +1,194 @@
+---
+description: 
+globs: *.py
+alwaysApply: false
+---
+# Python Best Practices
+
+This document outlines the key best practices and guidelines for Python development. Follow these rules to maintain high-quality, maintainable Python code.
+
+## Code Style and Formatting
+
+1. Follow PEP 8 style guide:
+   - Use 4 spaces for indentation
+   - Maximum line length of 88 characters (Black formatter standard)
+   - Two blank lines before top-level classes and functions
+   - One blank line before class methods
+   - Use spaces around operators and after commas
+
+2. Naming conventions:
+   - `snake_case` for functions and variables
+   - `PascalCase` for classes
+   - `SCREAMING_SNAKE_CASE` for constants
+   - Prefix private attributes with underscore: `_private_var`
+
+3. String formatting:
+   - Prefer f-strings over `.format()` or `%` formatting
+   - Use triple quotes for docstrings and multiline strings
+
+## Imports
+
+1. Import organization:
+   ```python
+   # Standard library imports
+   import os
+   import sys
+   from typing import List, Optional
+
+   # Third-party imports
+   import numpy as np
+   import pandas as pd
+
+   # Local application imports
+   from myapp.models import User
+   from myapp.utils import helper
+   ```
+
+2. Import best practices:
+   - Use absolute imports over relative imports
+   - Import specific classes/functions instead of entire modules
+   - Avoid wildcard imports (`from module import *`)
+   - Remove unused imports
+   - Use import aliases only when necessary for clarity or avoiding conflicts
+
+## Type Hints and Documentation
+
+1. Type hints:
+   - Use type hints for function arguments and return values
+   - Use Optional[] for nullable values
+   - Use Union[] for multiple possible types
+   - Use TypeVar for generic types
+   - Example:
+     ```python
+     from typing import Optional, List, Union
+
+     def process_data(items: List[str], max_length: Optional[int] = None) -> Union[str, List[str]]:
+         ...
+     ```
+
+2. Documentation:
+   - Write clear docstrings for all public functions, classes, and modules
+   - Follow Google-style docstring format
+   - Include:
+     - Brief description
+     - Args section
+     - Returns section
+     - Raises section (if applicable)
+     - Examples (when helpful)
+
+## Error Handling
+
+1. Exception handling:
+   - Catch specific exceptions instead of using bare `except`
+   - Use context managers (`with` statements) for resource management
+   - Raise custom exceptions for domain-specific errors
+   - Don't catch exceptions just to re-raise them
+   - Example:
+     ```python
+     try:
+         process_file(filename)
+     except FileNotFoundError:
+         logger.error(f"File {filename} not found")
+         raise
+     except PermissionError:
+         logger.error(f"No permission to access {filename}")
+         raise
+     ```
+
+## Functions and Classes
+
+1. Function design:
+   - Keep functions focused and single-purpose
+   - Limit function length (aim for under 50 lines)
+   - Use descriptive parameter names
+   - Provide default values for optional parameters
+   - Return early to avoid deep nesting
+
+2. Class design:
+   - Follow SOLID principles
+   - Use dataclasses for data containers
+   - Implement `__str__` and `__repr__` methods
+   - Use properties instead of getter/setter methods
+   - Keep classes focused and cohesive
+
+## Testing
+
+1. Test organization:
+   - Write unit tests for all public functions and classes
+   - Use pytest as the testing framework
+   - Follow AAA pattern (Arrange, Act, Assert)
+   - Use descriptive test names that explain the scenario
+   - Example:
+     ```python
+     def test_user_creation_with_valid_data():
+         # Arrange
+         user_data = {"name": "John", "email": "john@example.com"}
+         
+         # Act
+         user = User(**user_data)
+         
+         # Assert
+         assert user.name == "john"
+         assert user.email == "john@example.com"
+     ```
+
+## Performance and Optimization
+
+1. Code efficiency:
+   - Use list comprehensions over loops when appropriate
+   - Use generators for large datasets
+   - Prefer `join()` over string concatenation
+   - Use appropriate data structures (sets for uniqueness, dicts for lookups)
+   - Profile code before optimizing
+
+2. Memory management:
+   - Close files and network connections properly
+   - Use context managers for resource cleanup
+   - Be cautious with global variables
+   - Clean up large objects when no longer needed
+
+## Refactoring
+
+1. When to refactor:
+   - Duplicate code appears
+   - Function or class is too large
+   - Complex nested conditionals
+   - Poor naming that doesn't reflect purpose
+   - Violation of SOLID principles
+
+2. Refactoring techniques:
+   - Extract method for reusable code
+   - Extract class for related functionality
+   - Rename for clarity
+   - Introduce parameter object for many parameters
+   - Replace conditional with polymorphism
+
+## Security
+
+1. Security practices:
+   - Never store secrets in code
+   - Use environment variables for configuration
+   - Validate all input data
+   - Use secure password hashing
+   - Keep dependencies updated
+   - Use HTTPS for network communications
+
+## Logging
+
+1. Logging best practices:
+   - Use appropriate log levels (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+   - Include contextual information in log messages
+   - Use structured logging for machine-readable logs
+   - Configure logging at application startup
+   - Don't log sensitive information
+
+## Version Control
+
+1. Git practices:
+   - Write clear commit messages
+   - Keep commits focused and atomic
+   - Use feature branches
+   - Review code before merging
+   - Keep main/master branch stable
+
+Remember: These rules are guidelines to help maintain code quality. Use judgment in applying them, as there may be valid reasons to deviate in specific situations. 

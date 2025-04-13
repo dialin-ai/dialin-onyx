@@ -105,3 +105,5 @@ export const ALLOWED_URL_PROTOCOLS = [
   "spotify:",
   "zoommtg:",
 ];
+
+export const APP_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || '/api';

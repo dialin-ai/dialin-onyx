@@ -1,0 +1,8 @@
+---
+description: 
+globs: *.py
+alwaysApply: false
+---
+
+# Your rule content
+When working with Python models using Pydantic (either editing the model itself or creating/updating instantiations), always check that you have injected all required arguments of the correct type. Your changes must not cause Pydantic errors.
