@@ -42,7 +42,7 @@ export const DemoDocumentUploadForm = ({
           name: existingDocumentSet?.name ?? "",
           description: existingDocumentSet?.description ?? "",
           cc_pair_ids: [],
-          is_public: false,
+          is_public: true,
           users: existingDocumentSet?.users ?? [],
           groups: existingDocumentSet?.groups ?? [],
         }}
@@ -90,8 +90,6 @@ export const DemoDocumentUploadForm = ({
 
             // Create a unique name for the connector
             const connectorName = `FileConnector-${values.name}-${Date.now()}`;
-
-            
 
             // Create a file connector
             const [connectorErrorMsg, connector] = await createConnector<FileConfig>({
@@ -244,6 +242,10 @@ export const DemoDocumentUploadForm = ({
                 multiple={true}
               />
             </div>
+
+            <text className="text-sm text-neutral-500">
+              Please note you are in a demo environment. Everything you upload will be available to all users.
+            </text>
 
             <div className="flex mt-6 pt-4 border-t border-neutral-200">
               <Button
