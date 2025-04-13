@@ -249,7 +249,7 @@ export function UserDropdown({
 
                 {showAdminPanel && !isDemoMode ? (
                   <DropdownOption
-                    href="/admin/indexing/status"
+                    href={user?.role === UserRole.ADMIN ? "/admin/indexing/status" : "/admin/documents/sets"}
                     icon={<LightSettingsIcon size={16} className="my-auto" />}
                     label="Admin Panel"
                   />

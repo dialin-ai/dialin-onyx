@@ -1,3 +1,6 @@
+import { ValidSources } from '@/lib/types';
+import { SearchOnyxDocument } from '@/lib/search/interfaces';
+
 export interface Message {
   id: string;
   text: string;
@@ -7,8 +10,8 @@ export interface Message {
 }
 
 export interface AnalysisResponse {
-  type: 'regulation' | 'article' | 'citation' | 'summary';
-  content: string | RegulationContent | ArticleContent | CitationContent | SummaryContent;
+  type: 'regulation' | 'article' | 'citation' | 'summary' | 'related_document';
+  content: string | RegulationContent | ArticleContent | CitationContent | SummaryContent | RelatedDocumentContent;
 }
 
 export interface RegulationContent {
@@ -51,4 +54,10 @@ export interface SummaryContent {
       recommended_action: string;
     }>;
   };
+}
+
+export interface RelatedDocumentContent {
+  regulation: string;
+  article: string;
+  document: SearchOnyxDocument;
 } 

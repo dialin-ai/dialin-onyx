@@ -4,18 +4,16 @@ import React, { useState, useRef, useEffect } from 'react';
 import { 
   Message, 
   AnalysisResponse, 
-  RegulationContent, 
-  ArticleContent, 
-  CitationContent,
   RegulationItem,
   ArticleItem,
   CitationItem,
-  SummaryContent
+  SummaryContent,
+  RelatedDocumentContent
 } from '@/app/chat/marketing/types';
 import { useUser } from '@/components/user/UserProvider';
 import { fetchWithCredentials } from '@/lib/fetchUtils';
 import { APP_BASE_URL } from '@/lib/constants';
-import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { useTheme } from 'next-themes';
@@ -29,6 +27,7 @@ function MarketingAnalysis() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [relatedDocuments, setRelatedDocuments] = useState<RelatedDocumentContent[]>([]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -181,7 +180,10 @@ function MarketingAnalysis() {
         for (const line of lines) {
           if (line.startsWith('data: ')) {
             try {
+              console.log('Processing SSE line:', line.slice(6));
               const data = JSON.parse(line.slice(6));
+              console.log('Parsed SSE data:', data);
+
               if (data.type === 'error') {
                 throw new Error(data.content);
               }
@@ -191,15 +193,97 @@ function MarketingAnalysis() {
                 const analysisMessageIndex = newMessages.findIndex(m => m.id === analysisMessage.id);
                 if (analysisMessageIndex !== -1) {
                   const currentMessage = newMessages[analysisMessageIndex];
+                  const newAnalysis = [...(currentMessage.analysis || [])];
+
+                  // Add the new data
+                  newAnalysis.push(data);
+
+                  // Process regulations first
+                  const regulationMap = new Map<string, {
+                    regulation: RegulationItem,
+                    articles: Map<string, {
+                      article: ArticleItem,
+                      citations: CitationItem[],
+                      relatedDocuments: RelatedDocumentContent[]
+                    }>
+                  }>();
+
+                  // Process regulations
+                  newAnalysis.filter(item => item.type === 'regulation').forEach(item => {
+                    const content = typeof item.content === 'string' ? JSON.parse(item.content) : item.content;
+                    content.regulations?.forEach((reg: RegulationItem) => {
+                      regulationMap.set(reg.regulation, {
+                        regulation: reg,
+                        articles: new Map()
+                      });
+                    });
+                  });
+
+                  // Process articles
+                  newAnalysis.filter(item => item.type === 'article').forEach(item => {
+                    const content = typeof item.content === 'string' ? JSON.parse(item.content) : item.content;
+                    content.articles?.forEach((art: ArticleItem) => {
+                      const regData = regulationMap.get(art.regulation);
+                      if (regData) {
+                        regData.articles.set(art.article, {
+                          article: art,
+                          citations: [],
+                          relatedDocuments: []
+                        });
+                      }
+                    });
+                  });
+
+                  // Process citations
+                  newAnalysis.filter(item => item.type === 'citation').forEach(item => {
+                    const content = typeof item.content === 'string' ? JSON.parse(item.content) : item.content;
+                    content.citations?.forEach((cit: CitationItem) => {
+                      const regData = regulationMap.get(cit.regulation);
+                      if (regData) {
+                        const artData = regData.articles.get(cit.article);
+                        if (artData) {
+                          artData.citations.push(cit);
+                        }
+                      }
+                    });
+                  });
+
+                  // Process related documents
+                  newAnalysis.filter(item => item.type === 'related_document').forEach(item => {
+                    try {
+                      console.log('Processing related document:', item);
+                      const content = typeof item.content === 'string' ? JSON.parse(item.content) : item.content as RelatedDocumentContent;
+                      console.log('Parsed content:', content);
+                      const regData = regulationMap.get(content.regulation);
+                      console.log('Found regulation data:', regData);
+                      if (regData) {
+                        const artData = regData.articles.get(content.article);
+                        console.log('Found article data:', artData);
+                        if (artData) {
+                          artData.relatedDocuments.push(content);
+                          console.log('Added document to article. Current related documents:', artData.relatedDocuments);
+                        }
+                      }
+                    } catch (error) {
+                      console.error('Error processing related document:', error, item);
+                    }
+                  });
+
                   newMessages[analysisMessageIndex] = {
                     ...currentMessage,
-                    analysis: [...(currentMessage.analysis || []), data],
+                    analysis: newAnalysis,
                   };
                 }
                 return newMessages;
               });
+
+              if (data.type === 'related_document') {
+                const content = data as RelatedDocumentContent;
+                setRelatedDocuments(prev => [...prev, content]);
+              }
             } catch (e) {
-              console.error('Error parsing SSE data:', e);
+              console.error('Error parsing SSE data:', e, 'Raw data:', line.slice(6));
+              // Don't throw the error, just log it and continue processing other messages
             }
           }
         }
@@ -240,7 +324,8 @@ function MarketingAnalysis() {
       regulation: RegulationItem,
       articles: Map<string, {
         article: ArticleItem,
-        citations: CitationItem[]
+        citations: CitationItem[],
+        relatedDocuments: RelatedDocumentContent[]
       }>
     }>();
 
@@ -276,7 +361,8 @@ function MarketingAnalysis() {
         if (regData) {
           regData.articles.set(art.article, {
             article: art,
-            citations: []
+            citations: [],
+            relatedDocuments: []
           });
         }
       });
@@ -294,6 +380,27 @@ function MarketingAnalysis() {
           }
         }
       });
+    });
+
+    // Process related documents
+    analysis.filter(item => item.type === 'related_document').forEach(item => {
+      try {
+        console.log('Processing related document:', item);
+        const content = typeof item.content === 'string' ? JSON.parse(item.content) : item.content as RelatedDocumentContent;
+        console.log('Parsed content:', content);
+        const regData = regulationMap.get(content.regulation);
+        console.log('Found regulation data:', regData);
+        if (regData) {
+          const artData = regData.articles.get(content.article);
+          console.log('Found article data:', artData);
+          if (artData) {
+            artData.relatedDocuments.push(content);
+            console.log('Added document to article. Current related documents:', artData.relatedDocuments);
+          }
+        }
+      } catch (error) {
+        console.error('Error processing related document:', error, item);
+      }
     });
 
     return (
@@ -360,11 +467,49 @@ function MarketingAnalysis() {
                       <p className="text-muted-foreground mb-4">{artData.article.description}</p>
                       
                       <div className="space-y-2 pl-4">
-                        {artData.citations.map((cit, citIndex) => (
-                          <div key={citIndex} className="border-l-2 border-secondary/20 pl-4 py-2">
-                            <div className="font-medium text-secondary-foreground">{cit.citation}</div>
+                        {/* Related Documents Section */}
+                        {artData.relatedDocuments.length > 0 && (
+                          <div className="mb-6">
+                            <h4 className="text-sm font-medium text-foreground mb-2">Source Documents</h4>
+                            <div className="space-y-2">
+                              {artData.relatedDocuments.map((doc, docIndex) => {
+                                // Ensure the document has a valid source type
+                                const document = doc.document;
+                                // For web documents, just show a link
+                                if ((document.source_type === 'regulation' || document.source_type === 'web') && document.link) {
+                                  return (
+                                    <div key={docIndex} className="p-3 rounded-lg border border-border">
+                                      <a 
+                                        href={document.link} 
+                                        target="_blank" 
+                                        rel="noopener noreferrer"
+                                        className="text-primary hover:text-primary/80 flex items-center gap-2"
+                                      >
+                                        <span className="truncate">{document.semantic_identifier || document.document_id}</span>
+                                        <span className="text-xs text-muted-foreground">↗</span>
+                                      </a>
+                                      {document.blurb && (
+                                        <p className="mt-2 text-sm text-muted-foreground line-clamp-2">{document.blurb}</p>
+                                      )}
+                                    </div>
+                                  );
+                                }
+                              })}
+                            </div>
                           </div>
-                        ))}
+                        )}
+                        
+                        {/* Citations Section */}
+                        {artData.citations.length > 0 && (
+                          <div>
+                            <h4 className="text-sm font-medium text-foreground mb-2">Relevant Citations</h4>
+                            {artData.citations.map((cit, citIndex) => (
+                              <div key={citIndex} className="border-l-2 border-secondary/20 pl-4 py-2">
+                                <div className="font-medium text-secondary-foreground">{cit.citation}</div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </details>
@@ -380,7 +525,7 @@ function MarketingAnalysis() {
   return (
     <div className="flex flex-col h-screen bg-background">
       <div className="flex-1 overflow-auto">
-        <div className="max-w-7xl mx-auto px-4 py-8">
+        <div className="container max-w-4xl mx-auto px-4 py-8">
           <div className="space-y-4">
             {messages.map(message => (
               <Card key={message.id} className={`p-4 ${
@@ -414,23 +559,34 @@ function MarketingAnalysis() {
       </div>
 
       <div className="border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="max-w-7xl min-w-[70%] mx-auto px-4 py-6">
-          <form onSubmit={handleSubmit}>
-            <div className="flex gap-4">
-              <Input
-                type="text"
+        <div className="container mx-auto px-8 py-6 flex justify-center">
+          <form onSubmit={handleSubmit} className="w-[60%]">
+            <div className="flex w-full gap-4">
+              <Textarea
                 value={input}
-                onChange={e => setInput(e.target.value)}
+                onChange={e => {
+                  setInput(e.target.value);
+                  // Reset height before calculating new height
+                  e.target.style.height = 'auto';
+                  // Set new height based on scrollHeight
+                  e.target.style.height = `${e.target.scrollHeight}px`;
+                }}
                 placeholder="Enter text to analyze..."
                 disabled={isLoading}
-                className="flex-1 text-lg py-6 min-w-[70em]"
+                className="flex-1 text-base px-4 py-2 min-w-0 h-[2.75rem] resize-none overflow-hidden leading-normal"
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSubmit(e);
+                  }
+                }}
               />
               <Button 
                 type="submit" 
                 disabled={isLoading}
                 variant="default"
                 size="lg"
-                className="px-8"
+                className="px-8 whitespace-nowrap self-end h-[2.75rem]"
               >
                 {isLoading ? 'Analyzing...' : 'Analyze'}
               </Button>

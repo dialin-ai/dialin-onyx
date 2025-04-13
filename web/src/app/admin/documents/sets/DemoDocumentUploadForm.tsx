@@ -185,8 +185,6 @@ export const DemoDocumentUploadForm = ({
               response = await createDocumentSet(processedValues);
             }
 
-            console.log(await response.json());
-
             if (response.ok) {
               setPopup({
                 message: isUpdate
@@ -196,7 +194,8 @@ export const DemoDocumentUploadForm = ({
               });
               onClose();
             } else {
-              const errorMsg = await response.text();
+              const errorJson = await response.json();
+              const errorMsg = errorJson.detail || "Unknown error occurred";
               setPopup({
                 message: isUpdate
                   ? `Error updating documents - ${errorMsg}`

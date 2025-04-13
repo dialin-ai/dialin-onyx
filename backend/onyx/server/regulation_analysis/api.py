@@ -1,14 +1,8 @@
 import asyncio
 import json
-import os
-import logging
 from typing import AsyncGenerator
-from fastapi import FastAPI, Request, APIRouter, Depends
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
-from fastapi.middleware.cors import CORSMiddleware
-from openai import AsyncOpenAI
-from anthropic import Anthropic
-from dotenv import load_dotenv
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -17,7 +11,11 @@ from onyx.auth.users import User
 from onyx.db.engine import get_session
 from onyx.utils.logger import setup_logger
 from onyx.llm.factory import get_default_llms
-from onyx.llm.interfaces import LLM
+from onyx.db.search_settings import get_current_search_settings
+from onyx.document_index.factory import get_default_document_index
+from onyx.context.search.models import IndexFilters
+from onyx.context.search.utils import chunks_or_sections_to_search_docs
+from onyx.context.search.preprocessing.access_filters import build_access_filters_for_user
 
 # Configure logging
 logger = setup_logger()
@@ -147,7 +145,7 @@ class RegulationDescriptor:
             - Include regulations that are relevant to the core business functions described, not just explicitly mentioned
             - Distinguish between regulations that would require explicit statements in marketing vs. those addressed in operational documents
             
-            Provide a list of regulations that apply to the user input. Provide your response as a JSON array of objects. Each
+            Provide your response as a JSON array of objects. Each
             entry must contain a single, exact regulation name and a description of its relevance to the text. Provide all regulations
             you are aware of that apply to the text. 
             - Do not group regulations together in an entry. E.g. "Data Privacy Regulations e.g. GDPR, CCPA"
@@ -194,13 +192,27 @@ class RegulationDescriptor:
         async for response in self._call_llm_with_template(articles_prompt, "article"):
             yield response
 
-    async def get_citations_for_article(self, user_input: str, article: dict) -> AsyncGenerator[str, None]:
+    async def get_citations_for_article(self, user_input: str, article: dict, related_doc: dict | None = None) -> AsyncGenerator[str, None]:
+        # Build document context if available
+        document_context = ""
+        if related_doc:
+            document_context = f"""
+            The following document is related to this article and should be used as a reference:
+            ====================
+            Title: {related_doc.get('semantic_identifier') or related_doc.get('document_id')}
+            Content: {related_doc.get('blurb', '')}
+            ====================
+            """
+
         citations_prompt = f"""
             You are an expert in the field of financial compliance and regulations with business context awareness. 
-            Provide exact citation from {article["regulation"]} article "{article["article"]}" which are relevant for the following marketing text:
+            Provide exact citations from the provided document context for {article["regulation"]} article "{article["article"]}" which are relevant to the following text:
             ====================
+
             {user_input}
             ====================
+            Here is the document context:
+            {document_context}
             
             Important: This is marketing text that necessarily simplifies complex business operations. When determining relevance:
             - Consider the likely underlying business processes, not just the exact wording
@@ -224,6 +236,102 @@ class RegulationDescriptor:
         async for response in self._call_llm_with_template(citations_prompt, "citation"):
             yield response
 
+    async def find_related_documents(
+        self,
+        regulations_data: dict,
+        articles_data: dict,
+        user: User | None,
+        db_session: Session,
+        limit: int = 1
+    ) -> AsyncGenerator[str, None]:
+        """
+        Search for documents related to the regulation and article pairs.
+        
+        Args:
+            regulations_data: Dictionary containing regulation information
+            articles_data: Dictionary containing article information
+            user: Current user for access control
+            db_session: Database session
+            limit: Maximum number of documents to return per regulation-article pair
+            
+        Yields:
+            JSON strings containing related documents for each regulation-article pair
+        """
+        try:
+            logger.info("Searching for related documents")
+            
+            # Get search settings and document index
+            search_settings = get_current_search_settings(db_session)
+            document_index = get_default_document_index(search_settings, None)
+            
+            # Build user access filters
+            user_acl_filters = build_access_filters_for_user(user, db_session)
+            
+            # Process each regulation and its articles
+            for regulation in regulations_data.get('regulations', []):
+                reg_name = regulation.get('regulation')
+                if not reg_name:
+                    continue
+                
+                # Find matching articles for this regulation
+                matching_articles = [
+                    art for art in articles_data['articles']
+                    if art.get('regulation') == reg_name
+                ]
+                
+                for article in matching_articles:
+                    art_name = article.get('article')
+                    if not art_name:
+                        continue
+                        
+                    # Construct search query combining regulation and article info
+                    search_query = f"{reg_name} {art_name} {article.get('description', '')}"
+                    
+                    # Set up filters
+                    filters = IndexFilters(
+                        access_control_list=user_acl_filters,
+                    )
+                    
+                    # Perform document search
+                    matching_chunks = document_index.admin_retrieval(
+                        query=search_query,
+                        filters=filters,
+                        num_to_retrieve=limit
+                    )
+                    
+                    # Convert chunks to search docs
+                    documents = chunks_or_sections_to_search_docs(matching_chunks)
+                    
+                    # Deduplicate documents
+                    seen_docs = set()
+                    unique_docs = []
+                    for doc in documents:
+                        if doc.document_id not in seen_docs:
+                            unique_docs.append(doc)
+                            seen_docs.add(doc.document_id)
+                    
+                    # Prepare response with additional context
+                    for doc in unique_docs:
+                        response = {
+                            "type": "related_document",  # Changed to singular for individual document streaming
+                            "content": {
+                                "regulation": reg_name,
+                                "article": art_name,
+                                "document": {
+                                    **doc.model_dump(),
+                                    "relevance_explanation": f"This document is related to {reg_name} {art_name}",
+                                    "is_relevant": True,
+                                    "score": doc.score or 1.0,
+                                    "match_highlights": doc.match_highlights or [doc.blurb] if doc.blurb else [],
+                                }
+                            }
+                        }
+                        yield f"data: {json.dumps(response)}\n\n"
+                    
+        except Exception as e:
+            logger.error(f"Error finding related documents: {str(e)}", exc_info=True)
+            yield f"data: {json.dumps({'type': 'error', 'content': f'Error finding related documents: {str(e)}'})}\n\n"
+
 descriptor = RegulationDescriptor()
 
 @router.post("/analyze")
@@ -239,9 +347,10 @@ async def analyze(
     try:
         async def analyze_stream():
             try:
-                # Get complete regulations response
-                logger.info("Getting regulations")
                 regulations_response = None
+                article_results = []
+                citation_results = []
+                
                 async for chunk in descriptor.get_regulations(request.text):
                     data = json.loads(chunk)
                     yield f"data: {chunk}"
@@ -283,7 +392,6 @@ async def analyze(
                 
                 # Gather all article results
                 article_tasks = [process_regulation_articles(reg) for reg in regulations]
-                article_results = []
                 
                 try:
                     # Wait for all tasks to complete
@@ -297,54 +405,105 @@ async def analyze(
                 except Exception as e:
                     logger.error(f"Error in article processing: {str(e)}")
 
-                # Process all articles in parallel to get citations
-                logger.info(f"Processing {len(article_results)} articles in parallel")
-                
-                async def process_article_citations(article):
-                    citations_response = None
+                # Dummy regulations response
+                # regulations_response = {
+                #     "regulations": [
+                #         {
+                #             "regulation": "GDPR",
+                #             "description": "General Data Protection Regulation"
+                #         },
+                #         {
+                #             "regulation": "CCPA",
+                #             "description": "California Consumer Privacy Act"
+                #         }
+                #     ]
+                # }
+
+                # # Stream regulations response
+                # yield f"data: {json.dumps({'type': 'regulation', 'content': json.dumps(regulations_response)})}\n\n"
+
+                # # Dummy article results
+                # article_results = {
+                #     'articles': [
+                #         {
+                #             "regulation": "GDPR",
+                #             "article": "Article 5",
+                #             "description": "Principles relating to processing of personal data"
+                #         },
+                #         {
+                #             "regulation": "CCPA",
+                #             "article": "Section 1798.100",
+                #             "description": "Consumer rights regarding personal information"
+                #         }
+                #     ]
+                # }
+
+                # # Stream article results
+                # yield f"data: {json.dumps({'type': 'article', 'content': json.dumps(article_results)})}\n\n"
+
+                # Search for related documents if we have regulations and articles
+                if regulations_response and article_results:
+                    logger.info("Searching for related documents")
+                    # Store related documents by regulation and article
+                    related_docs_map = {}
                     try:
-                        # Create a list to store chunks
-                        chunks = []
-                        # Run the generator in a separate thread
-                        async for chunk in descriptor.get_citations_for_article(request.text, article):
+                        async for chunk in descriptor.find_related_documents(
+                            regulations_response,
+                            article_results,
+                            _,  # Current user
+                            db_session
+                        ):
+                            # Log and stream the document results
+                            try:
+                                # The chunk already includes "data: " prefix
+                                yield chunk
+                                
+                                # Parse and log the data (remove "data: " prefix first)
+                                data = json.loads(chunk.replace("data: ", ""))
+                                if data['type'] == 'related_document':
+                                    # Store the document for later use
+                                    reg = data['content']['regulation']
+                                    art = data['content']['article']
+                                    key = f"{reg}:{art}"
+                                    if key not in related_docs_map:
+                                        related_docs_map[key] = data['content']['document']
+                                    
+                                    logger.info(
+                                        f"Found related document for {reg} - "
+                                        f"{art}: "
+                                        f"{data['content']['document'].get('semantic_identifier', 'Unknown')} "
+                                        f"(ID: {data['content']['document'].get('document_id', 'Unknown')})"
+                                    )
+                            except json.JSONDecodeError as e:
+                                logger.error(f"Error parsing document chunk: {str(e)}")
+                                continue
+                    except Exception as e:
+                        logger.error(f"Error processing related documents: {str(e)}")
+                        yield f"data: {json.dumps({'type': 'error', 'content': f'Error processing related documents: {str(e)}'})}\n\n"
+
+                # Process articles one at a time to get citations
+                logger.info(f"Processing {len(article_results)} articles for citations")
+                for article in article_results['articles']:
+                    try:
+                        # Get related document for this article if available
+                        key = f"{article['regulation']}:{article['article']}"
+                        related_doc = related_docs_map.get(key)
+                        async for chunk in descriptor.get_citations_for_article(request.text, article, related_doc):
                             data = json.loads(chunk)
-                            chunks.append(chunk)
-                            if data['type'] == 'citation':
-                                citations_response = json.loads(data['content'])
-                        # Return all chunks and the final response
-                        return chunks, citations_response
+                            # Stream each citation chunk immediately
+                            yield f"data: {chunk}"
+                            if data['type'] == 'citation' and data.get('content'):
+                                try:
+                                    citations_content = json.loads(data['content']) if isinstance(data['content'], str) else data['content']
+                                    if citations_content.get('citations'):
+                                        citation_results.extend(citations_content.get('citations', []))
+                                except json.JSONDecodeError as e:
+                                    logger.error(f"Invalid JSON in citation response: {str(e)}")
                     except Exception as e:
                         logger.error(f"Error processing citations for article {article.get('article', 'Unknown')}: {str(e)}")
-                        return [json.dumps({'type': 'error', 'content': f'Error processing citations: {str(e)}'})], None
-                
-                # Gather all citation results
-                citation_tasks = [process_article_citations(art) for art in article_results]
-                citation_results = []
-                
-                try:
-                    # Wait for all tasks to complete
-                    results = await asyncio.gather(*citation_tasks)
-                    for chunks, citations in results:
-                        # Yield all chunks
-                        for chunk in chunks:
-                            yield f"data: {chunk}"
-                        if citations:
-                            citation_results.extend(citations.get('citations', []))
-                except Exception as e:
-                    logger.error(f"Error in citation processing: {str(e)}")
 
                 # Generate summary of all findings
-                if article_results or citation_results:  # Only generate summary if we have results
-                    logger.info("Generating summary of analysis")
-                    async for chunk in descriptor.get_summary(
-                        request.text,
-                        regulations_response,
-                        article_results,
-                        citation_results
-                    ):
-                        yield f"data: {chunk}"
-                else:
-                    logger.warning("No articles or citations found, skipping summary generation")
+                # if article_results or citatiolklkj;lk;lkj;lkjkjhgkjhgkjhgcles or citations found, skipping summary generation")
 
             except Exception as e:
                 logger.error(f"Error in analyze_stream: {str(e)}", exc_info=True)
