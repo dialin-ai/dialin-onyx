@@ -134,8 +134,10 @@ class RegulationDescriptor:
     
     async def get_regulations(self, user_input: str) -> AsyncGenerator[str, None]:
         regulations_prompt = f"""
-            You are an expert in the field of financial compliance and regulations with business context awareness. 
-            Identify the regulations that may be relevant to the following marketing text:
+            You are a compliance and regulations officer working in a fintech company.
+            Part of your role is to provide feedback on marketing materials to ensure they are compliant with the regulations that apply to marketing
+            and not misleading to consumers. 
+            
             ====================
             {user_input}
             ====================
@@ -205,7 +207,7 @@ class RegulationDescriptor:
             """
 
         citations_prompt = f"""
-            You are an expert in the field of financial compliance and regulations with business context awareness. 
+            You are a compliance and regulations officer working in a fintech company.
             Provide exact citations from the provided document context for {article["regulation"]} article "{article["article"]}" which are relevant to the following text:
             ====================
 

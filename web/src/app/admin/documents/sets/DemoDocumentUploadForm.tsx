@@ -19,14 +19,12 @@ import { createCredential, linkCredential } from "@/lib/credential";
 import { FileConfig } from "@/lib/connectors/connectors";
 
 interface SetCreationPopupProps {
-  userGroups: UserGroup[] | undefined;
   onClose: () => void;
   setPopup: (popupSpec: PopupSpec | null) => void;
   existingDocumentSet?: DocumentSet;
 }
 
 export const DemoDocumentUploadForm = ({
-  userGroups,
   onClose,
   setPopup,
   existingDocumentSet,

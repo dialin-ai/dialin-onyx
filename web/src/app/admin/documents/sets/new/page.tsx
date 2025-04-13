@@ -19,7 +19,7 @@ function Main() {
   const { popup, setPopup } = usePopup();
   const router = useRouter();
   const { user } = useUser();
-  const isDemo = user?.role === UserRole.DEMO;
+  const isDemo = user?.role === UserRole.DEMO || user?.role === UserRole.ADMIN;
 
   const {
     data: ccPairs,
@@ -27,14 +27,13 @@ function Main() {
     error: ccPairsError,
   } = useConnectorStatus();
 
-  // EE only
   const { data: userGroups, isLoading: userGroupsIsLoading } = useUserGroups();
 
-  if (isCCPairsLoading || userGroupsIsLoading) {
+  if (!isDemo && (isCCPairsLoading || userGroupsIsLoading)) {
     return <ThreeDotsLoader />;
   }
 
-  if (ccPairsError || !ccPairs) {
+  if (!isDemo && (ccPairsError || !ccPairs)) {
     return (
       <ErrorCallout
         errorTitle="Failed to fetch Connectors"
@@ -50,7 +49,6 @@ function Main() {
       <CardSection>
         {isDemo ? (
           <DemoDocumentUploadForm
-            userGroups={userGroups}
             onClose={() => {
               refreshDocumentSets();
               router.push("/admin/documents/sets");
@@ -59,7 +57,7 @@ function Main() {
           />
         ) : (
           <DocumentSetCreationForm
-            ccPairs={ccPairs}
+            ccPairs={ccPairs!}
             userGroups={userGroups}
             onClose={() => {
               refreshDocumentSets();
@@ -75,7 +73,7 @@ function Main() {
 
 const Page = () => {
   const { user } = useUser();
-  const isDemo = user?.role === UserRole.DEMO;
+  const isDemo = user?.role === UserRole.DEMO || user?.role === UserRole.ADMIN;
 
   return (
     <div className="container mx-auto">
