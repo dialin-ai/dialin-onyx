@@ -430,7 +430,7 @@ function MarketingAnalysis() {
                   </div>
                   <div className="mb-2">
                     <span className="font-medium text-foreground">Related Text:</span>
-                    <p className="mt-1 p-2 bg-background rounded border border-border">"{consideration.text_segment}"</p>
+                    <p className="mt-1 p-2 bg-background rounded border border-border">&ldquo;{consideration.text_segment}&rdquo;</p>
                   </div>
                   <div className="mb-2">
                     <span className="font-medium text-foreground">Analysis:</span>
@@ -566,10 +566,11 @@ function MarketingAnalysis() {
                 value={input}
                 onChange={e => {
                   setInput(e.target.value);
-                  // Reset height before calculating new height
+                  // Reset height to auto first to properly calculate scrollHeight
                   e.target.style.height = 'auto';
                   // Set new height based on scrollHeight
-                  e.target.style.height = `${e.target.scrollHeight}px`;
+                  const newHeight = Math.max(44, e.target.scrollHeight); // 44px = 2.75rem (base height)
+                  e.target.style.height = `${newHeight}px`;
                 }}
                 placeholder="Enter text to analyze..."
                 disabled={isLoading}

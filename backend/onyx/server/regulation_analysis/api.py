@@ -61,6 +61,7 @@ class RegulationDescriptor:
                 json.loads(content)  # Just validate, we'll use the original string in the response
             except json.JSONDecodeError as e:
                 logger.error(f"Invalid JSON received from LLM for {response_type}: {str(e)}")
+                logger.error(e)
                 yield f"{json.dumps({'type': 'error', 'content': f'Invalid response format for {response_type}'})}\n\n"
                 return
                 
@@ -217,6 +218,7 @@ class RegulationDescriptor:
             Important: This is marketing text that necessarily simplifies complex business operations. When determining relevance:
             - Consider the likely underlying business processes, not just the exact wording
             - Distinguish between citations that would require explicit statements in marketing vs. those addressed in operational documents
+            - If there is no document context or the document context is not relevant (e.g. it is not from the specified regulation/article), use your knowledge of the regulation to identify and output the most relevant citations.
             
             - Do not include any other text outside the direct citations. Do not make up citations. 
             - Make your answer as complete as possible. If you miss any citations, the user may be subject to penalties.
@@ -239,7 +241,7 @@ class RegulationDescriptor:
     async def find_related_documents(
         self,
         regulations_data: dict,
-        articles_data: dict,
+        articles_data: list,
         user: User | None,
         db_session: Session,
         limit: int = 1
@@ -249,7 +251,7 @@ class RegulationDescriptor:
         
         Args:
             regulations_data: Dictionary containing regulation information
-            articles_data: Dictionary containing article information
+            articles_data: List of article information
             user: Current user for access control
             db_session: Database session
             limit: Maximum number of documents to return per regulation-article pair
@@ -275,7 +277,7 @@ class RegulationDescriptor:
                 
                 # Find matching articles for this regulation
                 matching_articles = [
-                    art for art in articles_data['articles']
+                    art for art in articles_data
                     if art.get('regulation') == reg_name
                 ]
                 
@@ -285,7 +287,7 @@ class RegulationDescriptor:
                         continue
                         
                     # Construct search query combining regulation and article info
-                    search_query = f"{reg_name} {art_name} {article.get('description', '')}"
+                    search_query = f"{reg_name} {art_name}"
                     
                     # Set up filters
                     filters = IndexFilters(
@@ -296,30 +298,54 @@ class RegulationDescriptor:
                     matching_chunks = document_index.admin_retrieval(
                         query=search_query,
                         filters=filters,
-                        num_to_retrieve=limit
+                        num_to_retrieve=limit * 3  # Retrieve more docs since we'll filter some out
                     )
                     
                     # Convert chunks to search docs
                     documents = chunks_or_sections_to_search_docs(matching_chunks)
                     
-                    # Deduplicate documents
+                    # Deduplicate documents and verify relevance
                     seen_docs = set()
                     unique_docs = []
                     for doc in documents:
-                        if doc.document_id not in seen_docs:
-                            unique_docs.append(doc)
-                            seen_docs.add(doc.document_id)
+                        if doc.document_id in seen_docs:
+                            continue
+                            
+                        # Check if document title/identifier contains regulation or article reference
+                        doc_identifier = (doc.semantic_identifier or "").lower()
+                        doc_title = (doc.title or "").lower()
+                        reg_name_lower = reg_name.lower()
+                        art_name_lower = art_name.lower()
+                        
+                        # Basic relevance check - document should mention either regulation or article
+                        is_relevant = (
+                            reg_name_lower in doc_identifier or 
+                            reg_name_lower in doc_title or
+                            art_name_lower in doc_identifier or 
+                            art_name_lower in doc_title
+                        )
+                        
+                        if not is_relevant:
+                            logger.debug(f"Skipping irrelevant document: {doc_identifier} for {reg_name} {art_name}")
+                            continue
+                            
+                        unique_docs.append(doc)
+                        seen_docs.add(doc.document_id)
+                        
+                        # Break if we have enough relevant documents
+                        if len(unique_docs) >= limit:
+                            break
                     
                     # Prepare response with additional context
                     for doc in unique_docs:
                         response = {
-                            "type": "related_document",  # Changed to singular for individual document streaming
+                            "type": "related_document",
                             "content": {
                                 "regulation": reg_name,
                                 "article": art_name,
                                 "document": {
                                     **doc.model_dump(),
-                                    "relevance_explanation": f"This document is related to {reg_name} {art_name}",
+                                    "relevance_explanation": f"This document mentions {reg_name} {art_name} in its title/identifier",
                                     "is_relevant": True,
                                     "score": doc.score or 1.0,
                                     "match_highlights": doc.match_highlights or [doc.blurb] if doc.blurb else [],
@@ -348,7 +374,7 @@ async def analyze(
         async def analyze_stream():
             try:
                 regulations_response = None
-                article_results = []
+                article_results = []  # This is a list of articles
                 citation_results = []
                 
                 async for chunk in descriptor.get_regulations(request.text):
@@ -365,6 +391,7 @@ async def analyze(
                             raise Exception("Invalid regulations response format")
 
                 if not regulations_response or not regulations_response.get('regulations'):
+                    logger.error(f"Regulations response: {regulations_response}")
                     logger.error("No valid regulations found in response")
                     yield f"data: {json.dumps({'type': 'error', 'content': 'No valid regulations found'})}\n\n"
                     return
@@ -405,42 +432,6 @@ async def analyze(
                 except Exception as e:
                     logger.error(f"Error in article processing: {str(e)}")
 
-                # Dummy regulations response
-                # regulations_response = {
-                #     "regulations": [
-                #         {
-                #             "regulation": "GDPR",
-                #             "description": "General Data Protection Regulation"
-                #         },
-                #         {
-                #             "regulation": "CCPA",
-                #             "description": "California Consumer Privacy Act"
-                #         }
-                #     ]
-                # }
-
-                # # Stream regulations response
-                # yield f"data: {json.dumps({'type': 'regulation', 'content': json.dumps(regulations_response)})}\n\n"
-
-                # # Dummy article results
-                # article_results = {
-                #     'articles': [
-                #         {
-                #             "regulation": "GDPR",
-                #             "article": "Article 5",
-                #             "description": "Principles relating to processing of personal data"
-                #         },
-                #         {
-                #             "regulation": "CCPA",
-                #             "article": "Section 1798.100",
-                #             "description": "Consumer rights regarding personal information"
-                #         }
-                #     ]
-                # }
-
-                # # Stream article results
-                # yield f"data: {json.dumps({'type': 'article', 'content': json.dumps(article_results)})}\n\n"
-
                 # Search for related documents if we have regulations and articles
                 if regulations_response and article_results:
                     logger.info("Searching for related documents")
@@ -449,7 +440,7 @@ async def analyze(
                     try:
                         async for chunk in descriptor.find_related_documents(
                             regulations_response,
-                            article_results,
+                            article_results,  # Pass the list directly
                             _,  # Current user
                             db_session
                         ):
@@ -483,7 +474,7 @@ async def analyze(
 
                 # Process articles one at a time to get citations
                 logger.info(f"Processing {len(article_results)} articles for citations")
-                for article in article_results['articles']:
+                for article in article_results:  # Iterate over the list directly
                     try:
                         # Get related document for this article if available
                         key = f"{article['regulation']}:{article['article']}"
@@ -503,8 +494,15 @@ async def analyze(
                         logger.error(f"Error processing citations for article {article.get('article', 'Unknown')}: {str(e)}")
 
                 # Generate summary of all findings
-                # if article_results or citatiolklkj;lk;lkj;lkjkjhgkjhgkjhgcles or citations found, skipping summary generation")
-
+                async for chunk in descriptor.get_summary(
+                    request.text,
+                    regulations_response,
+                    {'articles': article_results},  # Convert back to dict format for summary
+                    citation_results,
+                    related_docs_map
+                ):
+                    yield f"data: {chunk}"
+                
             except Exception as e:
                 logger.error(f"Error in analyze_stream: {str(e)}", exc_info=True)
                 yield f"data: {json.dumps({'type': 'error', 'content': f'Analysis error: {str(e)}'})}\n\n"
