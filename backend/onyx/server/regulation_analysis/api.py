@@ -31,20 +31,19 @@ class AnalysisRequest(BaseModel):
 
 class RegulationDescriptor:
     def __init__(self):
-        logger.info("Initializing RegulationDescriptor")
-        # Get default LLMs from the system
-        self.llm, self.fast_llm = get_default_llms()
-        logger.info("LLM initialized")
+        pass
 
     async def _call_llm_with_template(self, prompt: str, response_type: str) -> AsyncGenerator[str, None]:
         """
         Template method for making LLM API calls with standardized error handling and response formatting.
         """
         try:
+            llm, _ = get_default_llms()
+
             logger.info(f"Sending request to LLM for {response_type}")
             
             # Run the synchronous generator in a separate thread and collect content
-            chunks = await asyncio.to_thread(lambda: [chunk.content for chunk in self.llm.stream(
+            chunks = await asyncio.to_thread(lambda: [chunk.content for chunk in llm.stream(
                 prompt,
                 structured_response_format={"type": "json_object"}
             ) if chunk.content])
