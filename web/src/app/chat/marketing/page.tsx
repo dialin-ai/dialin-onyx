@@ -149,6 +149,12 @@ function MarketingAnalysis() {
     setInput('');
     setIsLoading(true);
 
+    // Reset textarea height
+    const textarea = document.querySelector('textarea');
+    if (textarea) {
+      textarea.style.height = '2.75rem';
+    }
+
     try {
       const response = await fetchWithCredentials(API_URL, {
         method: 'POST',

@@ -29,6 +29,7 @@ from onyx.chat.models import LLMRelevanceFilterResponse
 from onyx.chat.models import MessageResponseIDInfo
 from onyx.chat.models import MessageSpecificCitations
 from onyx.chat.models import OnyxAnswerPiece
+from onyx.chat.models import OnyxContexts
 from onyx.chat.models import PromptConfig
 from onyx.chat.models import QADocsResponse
 from onyx.chat.models import RefinedAnswerImprovement
@@ -72,7 +73,6 @@ from onyx.db.chat import get_or_create_root_message
 from onyx.db.chat import reserve_message_id
 from onyx.db.chat import translate_db_message_to_chat_message_detail
 from onyx.db.chat import translate_db_search_doc_to_server_search_doc
-from onyx.db.chat import update_chat_session_updated_at_timestamp
 from onyx.db.engine import get_session_context_manager
 from onyx.db.milestone import check_multi_assistant_milestone
 from onyx.db.milestone import create_milestone_if_not_exists
@@ -80,7 +80,6 @@ from onyx.db.milestone import update_user_assistant_milestone
 from onyx.db.models import SearchDoc as DbSearchDoc
 from onyx.db.models import ToolCall
 from onyx.db.models import User
-from onyx.db.models import Persona
 from onyx.db.persona import get_persona_by_id
 from onyx.db.search_settings import get_current_search_settings
 from onyx.document_index.factory import get_default_document_index
@@ -131,6 +130,7 @@ from onyx.tools.tool_implementations.internet_search.internet_search_tool import
 from onyx.tools.tool_implementations.search.search_tool import (
     FINAL_CONTEXT_DOCUMENTS_ID,
 )
+from onyx.tools.tool_implementations.search.search_tool import SEARCH_DOC_CONTENT_ID
 from onyx.tools.tool_implementations.search.search_tool import (
     SEARCH_RESPONSE_SUMMARY_ID,
 )
@@ -277,14 +277,29 @@ def _get_force_search_settings(
         # If user has uploaded files they're using, don't run any of the search tools
         return ForceUseTool(force_use=False, tool_name=tool_name)
 
-    # Always force search for every chat
-    args = {"query": new_msg_req.message} if new_msg_req.search_doc_ids else args
-    return ForceUseTool(force_use=True, tool_name=tool_name, args=args)
+    should_force_search = any(
+        [
+            new_msg_req.retrieval_options
+            and new_msg_req.retrieval_options.run_search
+            == OptionalSearchSetting.ALWAYS,
+            new_msg_req.search_doc_ids,
+            new_msg_req.query_override is not None,
+            DISABLE_LLM_CHOOSE_SEARCH,
+        ]
+    )
+
+    if should_force_search:
+        # If we are using selected docs, just put something here so the Tool doesn't need to build its own args via an LLM call
+        args = {"query": new_msg_req.message} if new_msg_req.search_doc_ids else args
+        return ForceUseTool(force_use=True, tool_name=tool_name, args=args)
+
+    return ForceUseTool(force_use=False, tool_name=tool_name, args=args)
 
 
 ChatPacket = (
     StreamingError
     | QADocsResponse
+    | OnyxContexts
     | LLMRelevanceFilterResponse
     | FinalUsedContextDocsResponse
     | ChatMessageDetail
@@ -326,37 +341,23 @@ def stream_chat_message_objects(
     single_message_history: str | None = None,
 ) -> ChatPacketStream:
     """Streams in order:
-
-    1. User message
-    2. Search results
-    3. AI response
-    4. Agentic search results (if enabled)
-    5. Agentic AI response (if enabled)
+    1. [conditional] Retrieved documents if a search needs to be run
+    2. [conditional] LLM selected chunk indices if LLM chunk filtering is turned on
+    3. [always] A set of streamed LLM tokens or an error anywhere along the line if something fails
+    4. [always] Details on the final AI response message that is created
     """
+    tenant_id = get_current_tenant_id()
+    use_existing_user_message = new_msg_req.use_existing_user_message
+    existing_assistant_message_id = new_msg_req.existing_assistant_message_id
+
+    # Currently surrounding context is not supported for chat
+    # Chat is already token heavy and harder for the model to process plus it would roll history over much faster
+    new_msg_req.chunks_above = 0
+    new_msg_req.chunks_below = 0
+
+    llm: LLM
+
     try:
-        # Get the assistant's pro search setting
-        assistant = None
-        if new_msg_req.alternate_assistant_id:
-            assistant = db_session.query(Persona).filter(Persona.id == new_msg_req.alternate_assistant_id).first()
-        else:
-            chat_session = db_session.query(ChatSession).filter(ChatSession.id == new_msg_req.chat_session_id).first()
-            if chat_session:
-                assistant = db_session.query(Persona).filter(Persona.id == chat_session.persona_id).first()
-
-        # Use the assistant's pro search setting if available, otherwise use the request's setting
-        use_agentic_search = assistant.pro_search_enabled if assistant else new_msg_req.use_agentic_search
-
-        tenant_id = get_current_tenant_id()
-        use_existing_user_message = new_msg_req.use_existing_user_message
-        existing_assistant_message_id = new_msg_req.existing_assistant_message_id
-
-        # Currently surrounding context is not supported for chat
-        # Chat is already token heavy and harder for the model to process plus it would roll history over much faster
-        new_msg_req.chunks_above = 0
-        new_msg_req.chunks_below = 0
-
-        llm: LLM
-
         user_id = user.id if user is not None else None
 
         chat_session = get_chat_session_by_id(
@@ -634,7 +635,7 @@ def stream_chat_message_objects(
             db_session=db_session,
             commit=False,
             reserved_message_id=reserved_message_id,
-            is_agentic=use_agentic_search,
+            is_agentic=new_msg_req.use_agentic_search,
         )
 
         prompt_override = new_msg_req.prompt_override or chat_session.prompt_override
@@ -780,7 +781,7 @@ def stream_chat_message_objects(
             current_agent_message_id=reserved_message_id,
             tools=tools,
             db_session=db_session,
-            use_agentic_search=use_agentic_search,
+            use_agentic_search=new_msg_req.use_agentic_search,
         )
 
         # reference_db_search_docs = None
@@ -917,6 +918,8 @@ def stream_chat_message_objects(
                             response=custom_tool_response.tool_result,
                             tool_name=custom_tool_response.tool_name,
                         )
+                elif packet.id == SEARCH_DOC_CONTENT_ID and include_contexts:
+                    yield cast(OnyxContexts, packet.response)
 
             elif isinstance(packet, StreamStopInfo):
                 if packet.stop_reason == StreamStopReason.FINISHED:
@@ -1066,8 +1069,6 @@ def stream_chat_message_objects(
             prev_message = next_answer_message
 
         logger.debug("Committing messages")
-        # Explicitly update the timestamp on the chat session
-        update_chat_session_updated_at_timestamp(chat_session_id, db_session)
         db_session.commit()  # actually save user / assistant message
 
         yield AgenticMessageResponseIDInfo(agentic_message_ids=agentic_message_ids)
