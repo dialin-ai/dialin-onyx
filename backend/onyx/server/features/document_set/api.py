@@ -35,6 +35,9 @@ def create_document_set(
     db_session: Session = Depends(get_session),
     tenant_id: str = Depends(get_current_tenant_id),
 ) -> int:
+    # Force document set to be public
+    document_set_creation_request.is_public = True
+    
     fetch_ee_implementation_or_noop(
         "onyx.db.user_group", "validate_object_creation_for_user", None
     )(
@@ -68,6 +71,9 @@ def patch_document_set(
     db_session: Session = Depends(get_session),
     tenant_id: str = Depends(get_current_tenant_id),
 ) -> None:
+    # Force document set to remain public
+    document_set_update_request.is_public = True
+    
     fetch_ee_implementation_or_noop(
         "onyx.db.user_group", "validate_object_creation_for_user", None
     )(
