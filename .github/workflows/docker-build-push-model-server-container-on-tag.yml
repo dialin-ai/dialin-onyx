@@ -6,7 +6,7 @@ on:
       - "*"
 
 env:
-  REGISTRY_IMAGE: ${{ contains(github.ref_name, 'cloud') && 'onyxdotapp/onyx-model-server-cloud' || 'onyxdotapp/onyx-model-server' }}
+  REGISTRY_IMAGE: ${{ contains(github.ref_name, 'cloud') && 'dialin/dialin-onyx-model-server-cloud' || 'dialin/dialin-onyx-model-server' }}
   LATEST_TAG: ${{ contains(github.ref_name, 'latest') }}
   DOCKER_BUILDKIT: 1
   BUILDKIT_PROGRESS: plain
