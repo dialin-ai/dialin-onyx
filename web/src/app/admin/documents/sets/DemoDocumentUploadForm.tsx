@@ -102,8 +102,8 @@ export const DemoDocumentUploadForm = ({
               refresh_freq: null,
               prune_freq: null,
               indexing_start: null,
-              access_type: "private",
-              groups: values.groups,
+              access_type: "public",
+              groups: [],
             });
 
             if (connectorErrorMsg || !connector) {
@@ -125,7 +125,7 @@ export const DemoDocumentUploadForm = ({
               admin_public: true,
               source: ValidSources.File,
               curator_public: true,
-              groups: values.groups,
+              groups: [],
               name: credentialName,
             });
 
@@ -162,11 +162,12 @@ export const DemoDocumentUploadForm = ({
               return;
             }
 
-            const cc_pair_id = (await linkResponse.json()).data;
+            const cc_pair_id = (await linkResponse.json()).id;
 
-            // Now create the document set with the CC pair and ensure the current user has access
-            const processedValues = {
-              ...values,
+            // Now create the document set with the CC pair and ensure it's public
+            const processedValues: DocumentSetCreationRequest = {
+              name: values.name,
+              description: values.description,
               cc_pair_ids: [cc_pair_id],
               is_public: true,
               users: [],
