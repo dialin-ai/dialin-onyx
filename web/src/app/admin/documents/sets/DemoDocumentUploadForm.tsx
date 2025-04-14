@@ -149,7 +149,7 @@ export const DemoDocumentUploadForm = ({
               credential.id,
               values.name,
               "public",
-              values.groups
+              []
             );
 
             if (!linkResponse.ok) {
@@ -169,8 +169,8 @@ export const DemoDocumentUploadForm = ({
               ...values,
               cc_pair_ids: [cc_pair_id],
               is_public: true,
-              users: user?.id ? [...values.users, user.id] : values.users,
-              groups: values.groups,
+              users: [],
+              groups: [],
             };
 
             let response;
