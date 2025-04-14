@@ -162,7 +162,21 @@ export const DemoDocumentUploadForm = ({
               return;
             }
 
-            const cc_pair_id = (await linkResponse.json()).id;
+            const linkResponseJson = await linkResponse.json();
+            console.log("Link response JSON:", linkResponseJson);
+            const cc_pair_id = linkResponseJson.data;
+
+            // Add a check for the cc_pair_id
+            if (typeof cc_pair_id !== 'number') {
+              console.error("Failed to retrieve valid cc_pair_id from link response:", linkResponseJson);
+              setPopup({
+                message: "Failed to link connector and credential. Invalid ID received.",
+                type: "error",
+              });
+              setIsUploading(false);
+              formikHelpers.setSubmitting(false);
+              return;
+            }
 
             // Now create the document set with the CC pair and ensure it's public
             const processedValues: DocumentSetCreationRequest = {
