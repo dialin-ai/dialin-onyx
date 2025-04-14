@@ -122,9 +122,9 @@ export const DemoDocumentUploadForm = ({
             // Create a dummy credential for the file connector
             const createCredentialResponse = await createCredential({
               credential_json: {},
-              admin_public: false,
+              admin_public: true,
               source: ValidSources.File,
-              curator_public: false,
+              curator_public: true,
               groups: values.groups,
               name: credentialName,
             });

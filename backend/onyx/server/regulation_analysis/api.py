@@ -322,7 +322,7 @@ class RegulationDescriptor:
                             
                         # Check if document title/identifier contains regulation or article reference
                         doc_identifier = (doc.semantic_identifier or "").lower()
-                        doc_title = (doc.title or "").lower()
+                        doc_title = (doc.semantic_identifier or "").lower()
                         reg_name_lower = reg_name.lower()
                         art_name_lower = art_name.lower()
                         
