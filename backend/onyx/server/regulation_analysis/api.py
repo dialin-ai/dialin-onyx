@@ -1,5 +1,6 @@
 import asyncio
 import json
+import time
 from typing import AsyncGenerator
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
@@ -37,16 +38,25 @@ class RegulationDescriptor:
         """
         Template method for making LLM API calls with standardized error handling and response formatting.
         """
+        start_time = time.time()
+        logger.info(f"Starting LLM call for {response_type}")
         try:
             llm, _ = get_default_llms()
 
-            logger.info(f"Sending request to LLM for {response_type}")
+            logger.info(f"Sending request to LLM for {response_type} with prompt length: {len(prompt)}")
             
             # Run the synchronous generator in a separate thread and collect content
-            chunks = await asyncio.to_thread(lambda: [chunk.content for chunk in llm.stream(
-                prompt,
-                structured_response_format={"type": "json_object"}
-            ) if chunk.content])
+            try:
+                chunks = await asyncio.to_thread(lambda: [chunk.content for chunk in llm.stream(
+                    prompt,
+                    structured_response_format={"type": "json_object"}
+                ) if chunk.content])
+                
+                logger.info(f"Received {len(chunks)} chunks from LLM for {response_type}")
+            except Exception as e:
+                logger.error(f"Error during LLM streaming for {response_type}: {str(e)}", exc_info=True)
+                yield f"{json.dumps({'type': 'error', 'content': f'Error during LLM streaming: {str(e)}'})}\n\n"
+                return
             
             if not chunks:
                 logger.error(f"No content received from LLM for {response_type}")
@@ -60,15 +70,17 @@ class RegulationDescriptor:
                 json.loads(content)  # Just validate, we'll use the original string in the response
             except json.JSONDecodeError as e:
                 logger.error(f"Invalid JSON received from LLM for {response_type}: {str(e)}")
-                logger.error(e)
+                logger.error(f"Raw content: {content[:500]}...")  # Log first 500 chars of invalid content
                 yield f"{json.dumps({'type': 'error', 'content': f'Invalid response format for {response_type}'})}\n\n"
                 return
                 
-            logger.info(f"Received complete {response_type} response")
+            elapsed_time = time.time() - start_time
+            logger.info(f"Successfully completed {response_type} response in {elapsed_time:.2f} seconds")
             yield f"{json.dumps({'type': response_type, 'content': content})}\n\n"
             
         except Exception as e:
-            logger.error(f"Error in {response_type} analysis: {str(e)}", exc_info=True)
+            elapsed_time = time.time() - start_time
+            logger.error(f"Error in {response_type} analysis after {elapsed_time:.2f} seconds: {str(e)}", exc_info=True)
             yield f"{json.dumps({'type': 'error', 'content': f'Error getting {response_type}: {str(e)}'})}\n\n"
 
     async def get_summary(self, user_input: str, regulations_data: dict, articles_data: list, citations_data: list) -> AsyncGenerator[str, None]:
@@ -378,13 +390,19 @@ async def analyze(
     """
     Endpoint that streams the analysis results.
     """
-    logger.info(f"Received analysis request with text length: {len(request.text)}")
+    request_start_time = time.time()
+    request_id = f"req_{int(request_start_time)}"  # Simple request ID for tracking
+    logger.info(f"[{request_id}] Received analysis request with text length: {len(request.text)}")
+    
     try:
         async def analyze_stream():
             try:
                 regulations_response = None
                 article_results = []  # This is a list of articles
                 citation_results = []
+                
+                logger.info(f"[{request_id}] Starting regulations analysis")
+                regulations_start_time = time.time()
                 
                 async for chunk in descriptor.get_regulations(request.text):
                     data = json.loads(chunk)
@@ -393,105 +411,104 @@ async def analyze(
                         try:
                             regulations_response = json.loads(data['content'])
                             if not isinstance(regulations_response, dict) or 'regulations' not in regulations_response:
-                                logger.error("Invalid regulations response format")
+                                logger.error(f"[{request_id}] Invalid regulations response format")
                                 raise Exception("Invalid regulations response format")
                         except json.JSONDecodeError as e:
-                            logger.error(f"Invalid JSON in regulations response: {str(e)}")
+                            logger.error(f"[{request_id}] Invalid JSON in regulations response: {str(e)}")
                             raise Exception("Invalid regulations response format")
 
+                regulations_time = time.time() - regulations_start_time
+                logger.info(f"[{request_id}] Completed regulations analysis in {regulations_time:.2f} seconds")
+
                 if not regulations_response or not regulations_response.get('regulations'):
-                    logger.error(f"Regulations response: {regulations_response}")
-                    logger.error("No valid regulations found in response")
+                    logger.error(f"[{request_id}] No valid regulations found. Response: {regulations_response}")
                     yield f"data: {json.dumps({'type': 'error', 'content': 'No valid regulations found'})}\n\n"
                     return
 
                 # Process all regulations in parallel to get articles
-                logger.info(f"Processing {len(regulations_response.get('regulations', []))} regulations in parallel")
+                num_regulations = len(regulations_response.get('regulations', []))
+                logger.info(f"[{request_id}] Processing {num_regulations} regulations in parallel")
+                articles_start_time = time.time()
                 regulations = regulations_response.get('regulations', [])
                 
                 async def process_regulation_articles(regulation):
+                    reg_start_time = time.time()
                     articles_response = None
                     try:
-                        # Create a list to store chunks
+                        logger.info(f"[{request_id}] Processing articles for regulation: {regulation.get('regulation', 'Unknown')}")
                         chunks = []
-                        # Run the generator in a separate thread
                         async for chunk in descriptor.get_articles_for_regulations(request.text, regulation):
                             data = json.loads(chunk)
                             chunks.append(chunk)
                             if data['type'] == 'article':
                                 articles_response = json.loads(data['content'])
-                        # Return all chunks and the final response
+                        reg_time = time.time() - reg_start_time
+                        logger.info(f"[{request_id}] Completed articles for regulation {regulation.get('regulation', 'Unknown')} in {reg_time:.2f} seconds")
                         return chunks, articles_response
                     except Exception as e:
-                        logger.error(f"Error processing articles for regulation {regulation.get('regulation', 'Unknown')}: {str(e)}")
+                        logger.error(f"[{request_id}] Error processing articles for regulation {regulation.get('regulation', 'Unknown')}: {str(e)}", exc_info=True)
                         return [json.dumps({'type': 'error', 'content': f'Error processing articles: {str(e)}'})], None
                 
-                # Gather all article results
-                article_tasks = [process_regulation_articles(reg) for reg in regulations]
-                
                 try:
-                    # Wait for all tasks to complete
-                    results = await asyncio.gather(*article_tasks)
+                    results = await asyncio.gather(*[process_regulation_articles(reg) for reg in regulations])
+                    articles_time = time.time() - articles_start_time
+                    logger.info(f"[{request_id}] Completed all article processing in {articles_time:.2f} seconds")
+                    
                     for chunks, articles in results:
-                        # Yield all chunks
                         for chunk in chunks:
                             yield f"data: {chunk}"
                         if articles:
                             article_results.extend(articles.get('articles', []))
                 except Exception as e:
-                    logger.error(f"Error in article processing: {str(e)}")
+                    logger.error(f"[{request_id}] Error in parallel article processing: {str(e)}", exc_info=True)
 
                 # Search for related documents if we have regulations and articles
                 if regulations_response and article_results:
-                    logger.info("Searching for related documents")
-                    # Store related documents by regulation and article
+                    logger.info(f"[{request_id}] Starting document search with {len(article_results)} articles")
+                    docs_start_time = time.time()
                     related_docs_map = {}
                     try:
                         async for chunk in descriptor.find_related_documents(
                             regulations_response,
-                            article_results,  # Pass the list directly
-                            _,  # Current user
+                            article_results,
+                            _,
                             db_session
                         ):
-                            # Log and stream the document results
+                            yield chunk
                             try:
-                                # The chunk already includes "data: " prefix
-                                yield chunk
-                                
-                                # Parse and log the data (remove "data: " prefix first)
                                 data = json.loads(chunk.replace("data: ", ""))
                                 if data['type'] == 'related_document':
-                                    # Store the document for later use
                                     reg = data['content']['regulation']
                                     art = data['content']['article']
                                     key = f"{reg}:{art}"
                                     if key not in related_docs_map:
                                         related_docs_map[key] = data['content']['document']
-                                    
-                                    logger.info(
-                                        f"Found related document for {reg} - "
-                                        f"{art}: "
-                                        f"{data['content']['document'].get('semantic_identifier', 'Unknown')} "
-                                        f"(ID: {data['content']['document'].get('document_id', 'Unknown')})"
+                                    logger.debug(
+                                        f"[{request_id}] Found document for {reg} - {art}: "
+                                        f"{data['content']['document'].get('semantic_identifier', 'Unknown')}"
                                     )
                             except json.JSONDecodeError as e:
-                                logger.error(f"Error parsing document chunk: {str(e)}")
+                                logger.error(f"[{request_id}] Error parsing document chunk: {str(e)}")
                                 continue
+                        docs_time = time.time() - docs_start_time
+                        logger.info(f"[{request_id}] Completed document search in {docs_time:.2f} seconds")
                     except Exception as e:
-                        logger.error(f"Error processing related documents: {str(e)}")
+                        logger.error(f"[{request_id}] Error processing related documents: {str(e)}", exc_info=True)
                         yield f"data: {json.dumps({'type': 'error', 'content': f'Error processing related documents: {str(e)}'})}\n\n"
 
-                # Process articles one at a time to get citations
-                logger.info(f"Processing {len(article_results)} articles for citations")
+                # Process citations
+                logger.info(f"[{request_id}] Starting citation processing for {len(article_results)} articles")
+                citations_start_time = time.time()
                 
                 async def process_article_citations(article):
+                    cite_start_time = time.time()
                     try:
-                        # Get related document for this article if available
                         key = f"{article['regulation']}:{article['article']}"
                         related_doc = related_docs_map.get(key)
                         chunks = []
                         article_citations = []
                         
+                        logger.info(f"[{request_id}] Processing citations for {key}")
                         async for chunk in descriptor.get_citations_for_article(request.text, article, related_doc):
                             data = json.loads(chunk)
                             chunks.append(chunk)
@@ -501,47 +518,57 @@ async def analyze(
                                     if citations_content.get('citations'):
                                         article_citations.extend(citations_content.get('citations', []))
                                 except json.JSONDecodeError as e:
-                                    logger.error(f"Invalid JSON in citation response: {str(e)}")
+                                    logger.error(f"[{request_id}] Invalid JSON in citation response: {str(e)}")
+                        
+                        cite_time = time.time() - cite_start_time
+                        logger.info(f"[{request_id}] Completed citations for {key} in {cite_time:.2f} seconds")
                         return chunks, article_citations
                     except Exception as e:
-                        logger.error(f"Error processing citations for article {article.get('article', 'Unknown')}: {str(e)}")
+                        logger.error(f"[{request_id}] Error processing citations for article {article.get('article', 'Unknown')}: {str(e)}", exc_info=True)
                         return [json.dumps({'type': 'error', 'content': f'Error processing citations: {str(e)}'})], []
 
-                # Process all articles in parallel
-                citation_tasks = [process_article_citations(article) for article in article_results]
                 try:
-                    # Wait for all tasks to complete
-                    results = await asyncio.gather(*citation_tasks)
+                    results = await asyncio.gather(*[process_article_citations(article) for article in article_results])
+                    citations_time = time.time() - citations_start_time
+                    logger.info(f"[{request_id}] Completed all citation processing in {citations_time:.2f} seconds")
+                    
                     for chunks, citations in results:
-                        # Yield all chunks
                         for chunk in chunks:
                             yield f"data: {chunk}"
-                        # Add citations to overall results
                         citation_results.extend(citations)
                 except Exception as e:
-                    logger.error(f"Error in parallel citation processing: {str(e)}")
+                    logger.error(f"[{request_id}] Error in parallel citation processing: {str(e)}", exc_info=True)
                     yield f"data: {json.dumps({'type': 'error', 'content': f'Error processing citations: {str(e)}'})}\n\n"
 
-                # Generate summary of all findings
+                # Generate summary
+                logger.info(f"[{request_id}] Starting summary generation")
+                summary_start_time = time.time()
                 async for chunk in descriptor.get_summary(
                     request.text,
                     regulations_response,
-                    {'articles': article_results},  # Convert back to dict format for summary
+                    {'articles': article_results},
                     citation_results
                 ):
                     yield f"data: {chunk}"
+                summary_time = time.time() - summary_start_time
+                logger.info(f"[{request_id}] Completed summary generation in {summary_time:.2f} seconds")
+                
+                total_time = time.time() - request_start_time
+                logger.info(f"[{request_id}] Completed full analysis in {total_time:.2f} seconds")
                 
             except Exception as e:
-                logger.error(f"Error in analyze_stream: {str(e)}", exc_info=True)
+                total_time = time.time() - request_start_time
+                logger.error(f"[{request_id}] Error in analyze_stream after {total_time:.2f} seconds: {str(e)}", exc_info=True)
                 yield f"data: {json.dumps({'type': 'error', 'content': f'Analysis error: {str(e)}'})}\n\n"
 
-        logger.info("Returning StreamingResponse")
+        logger.info(f"[{request_id}] Returning StreamingResponse")
         return StreamingResponse(
             analyze_stream(),
             media_type="text/event-stream"
         )
     except Exception as e:
-        logger.error(f"Error in analyze endpoint: {str(e)}", exc_info=True)
+        total_time = time.time() - request_start_time
+        logger.error(f"[{request_id}] Error in analyze endpoint after {total_time:.2f} seconds: {str(e)}", exc_info=True)
         return {"error": str(e)}
 
 if __name__ == "__main__":
