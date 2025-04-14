@@ -8,7 +8,7 @@ import {
   updateDocumentSet,
   DocumentSetCreationRequest,
 } from "./lib";
-import { DocumentSet, UserGroup, ValidSources } from "@/lib/types";
+import { DocumentSet, UserGroup, ValidSources, AccessType } from "@/lib/types";
 import { TextFormField } from "@/components/admin/connectors/Field";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
@@ -148,7 +148,7 @@ export const DemoDocumentUploadForm = ({
               connector.id,
               credential.id,
               values.name,
-              undefined,
+              "public",
               values.groups
             );
 
