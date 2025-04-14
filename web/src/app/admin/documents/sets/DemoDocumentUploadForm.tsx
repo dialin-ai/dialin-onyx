@@ -168,7 +168,7 @@ export const DemoDocumentUploadForm = ({
             const processedValues = {
               ...values,
               cc_pair_ids: [cc_pair_id],
-              is_public: false,
+              is_public: true,
               users: user?.id ? [...values.users, user.id] : values.users,
               groups: values.groups,
             };
