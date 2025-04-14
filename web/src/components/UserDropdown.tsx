@@ -117,8 +117,9 @@ export function UserDropdown({
     });
   };
 
-  const showAdminPanel = !user || user.role === UserRole.ADMIN;
-  const showDemoMode = !user || user.role === UserRole.ADMIN;
+  const showAdminPanel = !user || user.role === UserRole.ADMIN || user.role === UserRole.DEMO;
+  const showDemoMode = user?.role === UserRole.ADMIN;
+  const showUserSettings = !user || user.role !== UserRole.DEMO;
 
   const showCuratorPanel = user && isCurator;
   const showLogout =
@@ -248,7 +249,7 @@ export function UserDropdown({
 
                 {showAdminPanel && !isDemoMode ? (
                   <DropdownOption
-                    href="/admin/indexing/status"
+                    href={user?.role === UserRole.ADMIN ? "/admin/indexing/status" : "/admin/documents/sets"}
                     icon={<LightSettingsIcon size={16} className="my-auto" />}
                     label="Admin Panel"
                   />
@@ -262,7 +263,7 @@ export function UserDropdown({
                   )
                 )}
 
-                {toggleUserSettings && (
+                {showUserSettings && toggleUserSettings && (
                   <DropdownOption
                     onClick={toggleUserSettings}
                     icon={<UserIcon size={16} className="my-auto" />}

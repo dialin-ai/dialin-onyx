@@ -194,6 +194,17 @@ class StreamingError(BaseModel):
     stack_trace: str | None = None
 
 
+class OnyxContext(BaseModel):
+    content: str
+    document_id: str
+    semantic_identifier: str
+    blurb: str
+
+
+class OnyxContexts(BaseModel):
+    contexts: list[OnyxContext]
+
+
 class OnyxAnswer(BaseModel):
     answer: str | None
 
@@ -259,6 +270,7 @@ class PersonaOverrideConfig(BaseModel):
 AnswerQuestionPossibleReturn = (
     OnyxAnswerPiece
     | CitationInfo
+    | OnyxContexts
     | FileChatDisplay
     | CustomToolResponse
     | StreamingError

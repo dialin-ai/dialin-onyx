@@ -1,0 +1,37 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Imports Rule
+
+When you are adding, editing or removing imports always check that you have imported the right dependency. Your changes should not result in errors due to incorrect/invalid/missing imports.
+
+## Guidelines:
+
+1. When adding new functionality that uses classes, functions, or types from other modules, always add the appropriate import statements.
+
+2. When modifying existing code to use new dependencies, ensure those dependencies are properly imported.
+
+3. When removing functionality, clean up any unused imports.
+
+4. Verify that imports are placed in the correct section of the file (typically at the top, after any module docstring).
+
+5. Follow the project's import organization conventions:
+   - Standard library imports first
+   - Third-party library imports second
+   - Local application imports last
+
+6. When using classes or types from other modules, ensure you import the specific class/type rather than the entire module when possible.
+
+7. If you're unsure about an import, check the existing codebase for similar patterns.
+
+## Example:
+
+If you're adding code that uses `RetrievalDetails` from `onyx.context.search.models`, make sure to add:
+
+```python
+from onyx.context.search.models import RetrievalDetails
+```
+
+at the appropriate location in the imports section of the file.

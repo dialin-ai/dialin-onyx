@@ -13,7 +13,7 @@ import {
   FiBook,
 } from "react-icons/fi";
 import { FilterManager } from "@/lib/hooks";
-import { DocumentSet, Tag } from "@/lib/types";
+import { DocumentSet, Tag, UserRole } from "@/lib/types";
 import { SourceMetadata } from "@/lib/search/interfaces";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { SourceIcon } from "@/components/SourceIcon";
 import { SelectableDropdown, TagFilter } from "./TagFilter";
 import { Input } from "@/components/ui/input";
+import { useUser } from "@/components/user/UserProvider";
 
 interface FilterPopupProps {
   filterManager: FilterManager;
@@ -44,8 +45,11 @@ export function FilterPopup({
   filterManager,
   trigger,
 }: FilterPopupProps) {
+  const { user } = useUser();
+  const isDemo = user?.role === UserRole.DEMO;
+
   const [selectedFilter, setSelectedFilter] = useState<FilterCategories>(
-    FilterCategories.date
+    isDemo ? FilterCategories.documentSets : FilterCategories.date
   );
   const [currentDate, setCurrentDate] = useState(new Date());
   const [documentSetSearch, setDocumentSetSearch] = useState("");
@@ -261,12 +265,14 @@ export function FilterPopup({
         <div className="flex h-[325px]">
           <div className="w-1/3 border-r border-background-200 p-2">
             <ul className="space-y-1">
-              <FilterOption
-                category={FilterCategories.date}
-                icon={<FiCalendar className="w-4 h-4" />}
-                label="Date"
-              />
-              {availableSources.length > 0 && (
+              {!isDemo && (
+                <FilterOption
+                  category={FilterCategories.date}
+                  icon={<FiCalendar className="w-4 h-4" />}
+                  label="Date"
+                />
+              )}
+              {!isDemo && availableSources.length > 0 && (
                 <FilterOption
                   category={FilterCategories.sources}
                   icon={<FiDatabase className="w-4 h-4" />}
@@ -277,10 +283,10 @@ export function FilterPopup({
                 <FilterOption
                   category={FilterCategories.documentSets}
                   icon={<FiBook className="w-4 h-4" />}
-                  label="Sets"
+                  label={isDemo ? "Documents" : "Sets"}
                 />
               )}
-              {availableTags.length > 0 && (
+              {!isDemo && availableTags.length > 0 && (
                 <FilterOption
                   category={FilterCategories.tags}
                   icon={<FiTag className="w-4 h-4" />}

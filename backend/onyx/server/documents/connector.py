@@ -392,7 +392,7 @@ def check_drive_tokens(
 @router.post("/admin/connector/file/upload")
 def upload_files(
     files: list[UploadFile],
-    _: User = Depends(current_curator_or_admin_user),
+    _: User = Depends(current_user),
     db_session: Session = Depends(get_session),
 ) -> FileUploadResponse:
     for file in files:
@@ -578,7 +578,7 @@ def get_currently_failed_indexing_status(
 
 @router.get("/admin/connector/status")
 def get_connector_status(
-    user: User = Depends(current_curator_or_admin_user),
+    user: User = Depends(current_user),
     db_session: Session = Depends(get_session),
 ) -> list[ConnectorStatus]:
     cc_pairs = get_connector_credential_pairs_for_user(

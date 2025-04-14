@@ -255,9 +255,6 @@ export const constructSubQuestions = (
   if (!newDetail) {
     return subQuestions;
   }
-  if (newDetail.level_question_num == 0) {
-    return subQuestions;
-  }
 
   const updatedSubQuestions = [...subQuestions];
 
@@ -275,6 +272,7 @@ export const constructSubQuestions = (
       }
     }
   } else if ("top_documents" in newDetail) {
+    // Handle DocumentsResponse
     const { level, level_question_num, top_documents } = newDetail;
     let subQuestion = updatedSubQuestions.find(
       (sq) => sq.level === level && sq.level_question_num === level_question_num
@@ -289,6 +287,7 @@ export const constructSubQuestions = (
         context_docs: { top_documents },
         is_complete: false,
       };
+      updatedSubQuestions.push(subQuestion);
     } else {
       subQuestion.context_docs = { top_documents };
     }
@@ -338,7 +337,7 @@ export const constructSubQuestions = (
     }
 
     // Append to the question
-    subQuestion.question += sub_question;
+    subQuestion.question = sub_question;
   } else if ("sub_query" in newDetail) {
     // Handle SubQueryPiece
     const { level, level_question_num, query_id, sub_query } = newDetail;
@@ -352,7 +351,7 @@ export const constructSubQuestions = (
       // If we receive a sub_query before its parent question, create a placeholder
       subQuestion = {
         level,
-        level_question_num: level_question_num,
+        level_question_num,
         question: "",
         answer: "",
         sub_queries: [],

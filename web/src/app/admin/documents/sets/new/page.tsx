@@ -3,6 +3,7 @@
 import { AdminPageTitle } from "@/components/admin/Title";
 import { BookmarkIcon } from "@/components/icons/icons";
 import { DocumentSetCreationForm } from "../DocumentSetCreationForm";
+import { DemoDocumentUploadForm } from "../DemoDocumentUploadForm";
 import { useConnectorStatus, useUserGroups } from "@/lib/hooks";
 import { ThreeDotsLoader } from "@/components/Loading";
 import { usePopup } from "@/components/admin/connectors/Popup";
@@ -11,10 +12,14 @@ import { ErrorCallout } from "@/components/ErrorCallout";
 import { useRouter } from "next/navigation";
 import { refreshDocumentSets } from "../hooks";
 import CardSection from "@/components/admin/CardSection";
+import { useUser } from "@/components/user/UserProvider";
+import { UserRole } from "@/lib/types";
 
 function Main() {
   const { popup, setPopup } = usePopup();
   const router = useRouter();
+  const { user } = useUser();
+  const isDemo = user?.role === UserRole.DEMO || user?.role === UserRole.ADMIN;
 
   const {
     data: ccPairs,
@@ -22,14 +27,13 @@ function Main() {
     error: ccPairsError,
   } = useConnectorStatus();
 
-  // EE only
   const { data: userGroups, isLoading: userGroupsIsLoading } = useUserGroups();
 
-  if (isCCPairsLoading || userGroupsIsLoading) {
+  if (!isDemo && (isCCPairsLoading || userGroupsIsLoading)) {
     return <ThreeDotsLoader />;
   }
 
-  if (ccPairsError || !ccPairs) {
+  if (!isDemo && (ccPairsError || !ccPairs)) {
     return (
       <ErrorCallout
         errorTitle="Failed to fetch Connectors"
@@ -43,28 +47,41 @@ function Main() {
       {popup}
 
       <CardSection>
-        <DocumentSetCreationForm
-          ccPairs={ccPairs}
-          userGroups={userGroups}
-          onClose={() => {
-            refreshDocumentSets();
-            router.push("/admin/documents/sets");
-          }}
-          setPopup={setPopup}
-        />
+        {isDemo ? (
+          <DemoDocumentUploadForm
+            onClose={() => {
+              refreshDocumentSets();
+              router.push("/admin/documents/sets");
+            }}
+            setPopup={setPopup}
+          />
+        ) : (
+          <DocumentSetCreationForm
+            ccPairs={ccPairs!}
+            userGroups={userGroups}
+            onClose={() => {
+              refreshDocumentSets();
+              router.push("/admin/documents/sets");
+            }}
+            setPopup={setPopup}
+          />
+        )}
       </CardSection>
     </>
   );
 }
 
 const Page = () => {
+  const { user } = useUser();
+  const isDemo = user?.role === UserRole.DEMO || user?.role === UserRole.ADMIN;
+
   return (
     <div className="container mx-auto">
       <BackButton />
 
       <AdminPageTitle
         icon={<BookmarkIcon size={32} />}
-        title="New Document Set"
+        title={isDemo ? "Upload Documents" : "New Document Set"}
       />
 
       <Main />

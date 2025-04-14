@@ -53,6 +53,7 @@ import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { TruncatedText } from "@/components/ui/truncatedText";
 import { UserRole } from "@/lib/types";
 import { useDemoModeContext } from "@/components/demo/DemoModeContext";
+import { FiPlus } from "react-icons/fi";
 
 interface HistorySidebarProps {
   liveAssistant?: Persona | null;
@@ -351,6 +352,18 @@ export const HistorySidebar = forwardRef<HTMLDivElement, HistorySidebarProps>(
                   </p>
                 </Link>
               )}
+              <Link
+                className="w-full px-2 py-1 rounded-md items-center hover:bg-accent-background-hovered cursor-pointer transition-all duration-150 flex gap-x-2"
+                href="/admin/documents/sets"
+              >
+                <FiPlus
+                  size={20}
+                  className="flex-none text-text-history-sidebar-button"
+                />
+                <p className="my-auto flex font-normal items-center text-base">
+                  Add Documents
+                </p>
+              </Link>
             </div>
           )}
           <div className="h-full  relative overflow-x-hidden overflow-y-auto">

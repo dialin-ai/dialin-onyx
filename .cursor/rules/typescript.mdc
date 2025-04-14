@@ -1,0 +1,268 @@
+---
+description: TypeScript and TSX best practices and guidelines
+globs: [*.ts, *.tsx]
+alwaysApply: false
+---
+# TypeScript and TSX Best Practices
+
+This document outlines the key best practices and guidelines for TypeScript and TSX development. Follow these rules to maintain high-quality, maintainable code.
+
+## Code Style and Formatting
+
+1. Follow TypeScript style guide:
+   - Use 2 spaces for indentation
+   - Maximum line length of 100 characters
+   - Use semicolons consistently
+   - Use single quotes for strings
+   - Use trailing commas in multiline objects and arrays
+   - Use parentheses around arrow function parameters when multiple parameters
+
+2. Naming conventions:
+   - `camelCase` for variables, functions, and methods
+   - `PascalCase` for classes, interfaces, and type aliases
+   - `SCREAMING_SNAKE_CASE` for constants
+   - Prefix private members with underscore: `_privateMember`
+   - Suffix React components with `Component`: `UserProfileComponent`
+   - Prefix interfaces with `I` (optional): `IUserProfile`
+
+3. File organization:
+   - One class/interface per file
+   - Group related files in feature folders
+   - Use index.ts files for clean exports
+   - Keep test files next to source files: `Component.tsx` and `Component.test.tsx`
+
+## Type System
+
+1. Type definitions:
+   - Always use type annotations for function parameters and return types
+   - Use interfaces for object shapes
+   - Use type aliases for unions, intersections, and primitives
+   - Example:
+     ```typescript
+     interface IUser {
+       id: string;
+       name: string;
+       email: string;
+     }
+
+     type UserRole = 'admin' | 'user' | 'guest';
+     type UserWithRole = IUser & { role: UserRole };
+     ```
+
+2. Type safety:
+   - Avoid `any` type - use `unknown` instead
+   - Use strict null checks
+   - Use type guards for runtime type checking
+   - Use discriminated unions for state management
+   - Example:
+     ```typescript
+     type Result<T> = 
+       | { status: 'success'; data: T }
+       | { status: 'error'; error: string };
+
+     function isSuccess<T>(result: Result<T>): result is { status: 'success'; data: T } {
+       return result.status === 'success';
+     }
+     ```
+
+## React/TSX Best Practices
+
+1. Component design:
+   - Use functional components with hooks
+   - Keep components small and focused
+   - Use composition over inheritance
+   - Extract reusable logic into custom hooks
+   - Example:
+     ```tsx
+     interface IUserProfileProps {
+       user: IUser;
+       onUpdate: (user: IUser) => void;
+     }
+
+     export const UserProfileComponent: React.FC<IUserProfileProps> = ({ user, onUpdate }) => {
+       const [isEditing, setIsEditing] = useState(false);
+       
+       return (
+         <div className="user-profile">
+           {/* Component content */}
+         </div>
+       );
+     };
+     ```
+
+2. State management:
+   - Use local state for UI state
+   - Use context for theme, auth, etc.
+   - Use Redux/RTK for complex state
+   - Keep state as close to usage as possible
+   - Example:
+     ```typescript
+     interface IAppState {
+       user: IUser | null;
+       theme: 'light' | 'dark';
+     }
+
+     const AppContext = createContext<IAppState>({
+       user: null,
+       theme: 'light'
+     });
+     ```
+
+## Error Handling
+
+1. Error management:
+   - Use custom error classes
+   - Handle errors at appropriate boundaries
+   - Use try-catch blocks for async operations
+   - Example:
+     ```typescript
+     class ApiError extends Error {
+       constructor(
+         public status: number,
+         public message: string,
+         public code: string
+       ) {
+         super(message);
+         this.name = 'ApiError';
+       }
+     }
+
+     async function fetchUser(id: string): Promise<IUser> {
+       try {
+         const response = await api.get(`/users/${id}`);
+         return response.data;
+       } catch (error) {
+         throw new ApiError(
+           error.response?.status || 500,
+           error.message,
+           'USER_FETCH_ERROR'
+         );
+       }
+     }
+     ```
+
+## Testing
+
+1. Test organization:
+   - Use Jest and React Testing Library
+   - Follow AAA pattern (Arrange, Act, Assert)
+   - Test behavior, not implementation
+   - Example:
+     ```typescript
+     describe('UserProfileComponent', () => {
+       it('should display user information', () => {
+         // Arrange
+         const user: IUser = {
+           id: '1',
+           name: 'John Doe',
+           email: 'john@example.com'
+         };
+
+         // Act
+         render(<UserProfileComponent user={user} onUpdate={jest.fn()} />);
+
+         // Assert
+         expect(screen.getByText('John Doe')).toBeInTheDocument();
+         expect(screen.getByText('john@example.com')).toBeInTheDocument();
+       });
+     });
+     ```
+
+## Performance
+
+1. Optimization:
+   - Use React.memo for expensive components
+   - Use useMemo and useCallback appropriately
+   - Implement virtualization for large lists
+   - Use code splitting and lazy loading
+   - Example:
+     ```typescript
+     const ExpensiveComponent = React.memo(({ data }: { data: IData[] }) => {
+       const processedData = useMemo(() => 
+         data.map(item => expensiveProcessing(item)),
+         [data]
+       );
+
+       return (
+         <div>
+           {processedData.map(item => (
+             <Item key={item.id} data={item} />
+           ))}
+         </div>
+       );
+     });
+     ```
+
+## Security
+
+1. Security practices:
+   - Sanitize user input
+   - Use Content Security Policy
+   - Implement proper authentication
+   - Use HTTPS for all requests
+   - Validate API responses
+   - Example:
+     ```typescript
+     function sanitizeInput(input: string): string {
+       return input.replace(/[<>]/g, '');
+     }
+
+     async function validateApiResponse<T>(
+       response: unknown,
+       schema: z.ZodSchema<T>
+     ): Promise<T> {
+       try {
+         return await schema.parseAsync(response);
+       } catch (error) {
+         throw new ValidationError('Invalid API response');
+       }
+     }
+     ```
+
+## Build and Tooling
+
+1. Configuration:
+   - Use strict TypeScript configuration
+   - Configure ESLint and Prettier
+   - Use path aliases for imports
+   - Example tsconfig.json:
+     ```json
+     {
+       "compilerOptions": {
+         "target": "ES2020",
+         "module": "ESNext",
+         "strict": true,
+         "esModuleInterop": true,
+         "skipLibCheck": true,
+         "forceConsistentCasingInFileNames": true,
+         "baseUrl": ".",
+         "paths": {
+           "@/*": ["src/*"]
+         }
+       }
+     }
+     ```
+
+## Documentation
+
+1. Documentation standards:
+   - Use JSDoc for public APIs
+   - Document complex types and interfaces
+   - Include examples in documentation
+   - Example:
+     ```typescript
+     /**
+      * Fetches a user by their ID
+      * @param id - The user's unique identifier
+      * @returns A promise that resolves to the user object
+      * @throws {ApiError} When the user cannot be fetched
+      * @example
+      * const user = await fetchUser('123');
+      * console.log(user.name);
+      */
+     async function fetchUser(id: string): Promise<IUser> {
+       // Implementation
+     }
+     ```
+
+Remember: These rules are guidelines to help maintain code quality. Use judgment in applying them, as there may be valid reasons to deviate in specific situations. 

@@ -158,13 +158,6 @@ export const DocumentSetCreationForm = ({
                   autoCompleteDisabled={true}
                   optional={true}
                 />
-
-                {isPaidEnterpriseFeaturesEnabled && (
-                  <IsPublicGroupSelector
-                    formikProps={props}
-                    objectName="document set"
-                  />
-                )}
               </div>
 
               <Separator className="my-6" />

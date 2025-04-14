@@ -144,7 +144,7 @@ export function DocumentMetadataBlock({
         </div>
       )}
 
-      {Object.entries(document.metadata).length > 0 && (
+      {document.metadata && Object.entries(document.metadata).length > 0 && (
         <>
           <div className="pl-1 border-l border-border" />
           {Object.entries(document.metadata)
@@ -198,6 +198,7 @@ export const DocumentDisplay = ({
     useState<OnyxDocument | null>(null);
 
   const handleViewFile = async () => {
+    console.log("document", document);
     setPresentingDocument(document);
   };
 

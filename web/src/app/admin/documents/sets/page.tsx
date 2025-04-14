@@ -41,6 +41,9 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import CreateButton from "@/components/ui/createButton";
+import { useUser } from "@/components/user/UserProvider";
+import { UserRole } from "@/lib/types";
+import { User } from "lucide-react";
 
 const numToDisplay = 50;
 
@@ -112,6 +115,8 @@ const DocumentSetTable = ({
   refreshEditable,
   setPopup,
 }: DocumentFeedbackTableProps) => {
+  const { user } = useUser();
+  const isDemo = user?.role === UserRole.DEMO;
   const [page, setPage] = useState(1);
 
   // sort by name for consistent ordering
@@ -134,7 +139,6 @@ const DocumentSetTable = ({
 
   return (
     <div>
-      <Title>Existing Document Sets</Title>
       <Table className="overflow-visible mt-2">
         <TableHeader>
           <TableRow>
@@ -142,7 +146,7 @@ const DocumentSetTable = ({
             <TableHead>Connectors</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>Public</TableHead>
-            <TableHead>Delete</TableHead>
+            {!isDemo && <TableHead>Delete</TableHead>}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -151,7 +155,7 @@ const DocumentSetTable = ({
             .map((documentSet) => {
               const isEditable = editableDocumentSets.some(
                 (eds) => eds.id === documentSet.id
-              );
+              ) && !isDemo;
               return (
                 <TableRow key={documentSet.id}>
                   <TableCell className="whitespace-normal break-all">
@@ -220,33 +224,35 @@ const DocumentSetTable = ({
                       </Badge>
                     )}
                   </TableCell>
-                  <TableCell>
-                    {isEditable ? (
-                      <DeleteButton
-                        onClick={async () => {
-                          const response = await deleteDocumentSet(
-                            documentSet.id
-                          );
-                          if (response.ok) {
-                            setPopup({
-                              message: `Document set "${documentSet.name}" scheduled for deletion`,
-                              type: "success",
-                            });
-                          } else {
-                            const errorMsg = (await response.json()).detail;
-                            setPopup({
-                              message: `Failed to schedule document set for deletion - ${errorMsg}`,
-                              type: "error",
-                            });
-                          }
-                          refresh();
-                          refreshEditable();
-                        }}
-                      />
-                    ) : (
-                      "-"
-                    )}
-                  </TableCell>
+                  {!isDemo && (
+                    <TableCell>
+                      {isEditable ? (
+                        <DeleteButton
+                          onClick={async () => {
+                            const response = await deleteDocumentSet(
+                              documentSet.id
+                            );
+                            if (response.ok) {
+                              setPopup({
+                                message: `Document set "${documentSet.name}" scheduled for deletion`,
+                                type: "success",
+                              });
+                            } else {
+                              const errorMsg = (await response.json()).detail;
+                              setPopup({
+                                message: `Failed to schedule document set for deletion - ${errorMsg}`,
+                                type: "error",
+                              });
+                            }
+                            refresh();
+                            refreshEditable();
+                          }}
+                        />
+                      ) : (
+                        "-"
+                      )}
+                    </TableCell>
+                  )}
                 </TableRow>
               );
             })}
@@ -268,6 +274,8 @@ const DocumentSetTable = ({
 
 const Main = () => {
   const { popup, setPopup } = usePopup();
+  const { user } = useUser();
+  const isDemo = user?.role === UserRole.DEMO;
   const {
     data: documentSets,
     isLoading: isDocumentSetsLoading,
@@ -298,9 +306,13 @@ const Main = () => {
     <div className="mb-8">
       {popup}
       <Text className="mb-3">
-        <b>Document Sets</b> allow you to group logically connected documents
-        into a single bundle. These can then be used as a filter when performing
-        searches to control the scope of information Onyx searches over.
+        <b>{isDemo ? "My Documents" : "Document Sets"}</b> allow you to group related documents
+        into a single bundle. These can be used as a filter when performing
+        searches to control the scope of information searched over.
+      </Text>
+
+      <Text>
+        See other data sources that we support <Link href="/admin/add-connector" className="text-blue-300 hover:text-blue-500 underline">here</Link>.
       </Text>
 
       <div className="mb-3"></div>
@@ -308,11 +320,8 @@ const Main = () => {
       <div className="flex mb-6">
         <CreateButton
           href="/admin/documents/sets/new"
-          text="New Document Set"
+          text={isDemo ? "Upload Documents" : "New Document Set"}
         />
-        {/* <Link href="/admin/documents/sets/new">
-          <Button variant="navigate">New Document Set</Button>
-        </Link> */}
       </div>
 
       {documentSets.length > 0 && (
@@ -332,9 +341,12 @@ const Main = () => {
 };
 
 const Page = () => {
+  const { user } = useUser();
+  const isDemo = user?.role === UserRole.DEMO;
+
   return (
     <div className="container mx-auto">
-      <AdminPageTitle icon={<BookmarkIcon size={32} />} title="Document Sets" />
+      <AdminPageTitle icon={<BookmarkIcon size={32} />} title={isDemo ? "My Documents" : "Document Sets"} />
 
       <Main />
     </div>

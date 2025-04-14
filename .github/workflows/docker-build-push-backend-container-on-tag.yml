@@ -6,7 +6,7 @@ on:
       - "*"
 
 env:
-  REGISTRY_IMAGE: ${{ contains(github.ref_name, 'cloud') && 'onyxdotapp/onyx-backend-cloud' || 'onyxdotapp/onyx-backend' }}
+  REGISTRY_IMAGE: ${{ contains(github.ref_name, 'cloud') && 'dialin/dialin-onyx-backend-cloud' || 'dialin/dialin-onyx-backend' }}
   LATEST_TAG: ${{ contains(github.ref_name, 'latest') }}
 
 jobs:

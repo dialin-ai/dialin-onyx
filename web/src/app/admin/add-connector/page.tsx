@@ -8,13 +8,17 @@ import Title from "@/components/ui/title";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { UserRole } from "@/lib/types";
+import { useUser } from "@/components/user/UserProvider";
 
 function SourceTile({
   sourceMetadata,
   preSelect,
+  isDemo
 }: {
   sourceMetadata: SourceMetadata;
   preSelect?: boolean;
+  isDemo?: boolean;
 }) {
   return (
     <Link
@@ -34,7 +38,7 @@ function SourceTile({
             : "bg-accent-background"
         }
       `}
-      href={sourceMetadata.adminUrl}
+      href={isDemo ? '#' : sourceMetadata.adminUrl}
     >
       <SourceIcon sourceType={sourceMetadata.internalName} iconSize={24} />
       <p className="font-medium text-sm mt-2">{sourceMetadata.displayName}</p>
@@ -44,6 +48,8 @@ function SourceTile({
 export default function Page() {
   const sources = useMemo(() => listSourceMetadata(), []);
   const [searchTerm, setSearchTerm] = useState("");
+  const { user } = useUser();
+  const isDemo = user?.role === UserRole.DEMO;
 
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -104,9 +110,11 @@ export default function Page() {
         icon={<ConnectorIcon size={32} />}
         title="Add Connector"
         farRightElement={
-          <Link href="/admin/indexing/status">
-            <Button variant="success-reverse">See Connectors</Button>
-          </Link>
+          !isDemo ? (
+            <Link href="/admin/indexing/status">
+              <Button variant="success-reverse">See Connectors</Button>
+            </Link>
+          ) : <></>
         }
       />
 
@@ -119,6 +127,14 @@ export default function Page() {
         onKeyDown={handleKeyPress}
         className="ml-1 w-96 h-9  flex-none rounded-md border border-border bg-background-50 px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
       />
+
+      {isDemo &&
+      <div className="mt-4">
+        <text>
+          To integrate with these sources, please contact us at dialin!
+        </text>
+      </div>
+      }
 
       {Object.entries(categorizedSources)
         .filter(([_, sources]) => sources.length > 0)
@@ -135,6 +151,7 @@ export default function Page() {
                     searchTerm.length > 0 && categoryInd == 0 && sourceInd == 0
                   }
                   key={source.internalName}
+                  isDemo={isDemo}
                   sourceMetadata={source}
                 />
               ))}
