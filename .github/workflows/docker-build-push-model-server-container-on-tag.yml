@@ -50,7 +50,7 @@ jobs:
     needs: [check_model_server_changes]
     if: needs.check_model_server_changes.outputs.changed == 'true'
     runs-on:
-      [runs-on, runner=8cpu-linux-x64, "run-id=${{ github.run_id }}-amd64"]
+      [runs-on, runner=ubuntu-latest, "run-id=${{ github.run_id }}-amd64"]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -91,7 +91,7 @@ jobs:
     needs: [check_model_server_changes]
     if: needs.check_model_server_changes.outputs.changed == 'true'
     runs-on:
-      [runs-on, runner=8cpu-linux-x64, "run-id=${{ github.run_id }}-arm64"]
+      [runs-on, runner=ubuntu-latest, "run-id=${{ github.run_id }}-arm64"]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

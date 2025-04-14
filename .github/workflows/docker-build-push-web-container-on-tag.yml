@@ -13,9 +13,8 @@ jobs:
   build:
     runs-on:
       - runs-on
-      - runner=${{ matrix.platform == 'linux/amd64' && '8cpu-linux-x64' || '8cpu-linux-arm64' }}
+      - runner=ubuntu-latest
       - run-id=${{ github.run_id }}
-      - tag=platform-${{ matrix.platform }}
     strategy:
       fail-fast: false
       matrix:
