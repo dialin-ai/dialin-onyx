@@ -57,7 +57,7 @@ function MarketingAnalysis() {
         const after = result.slice(index + segment.length);
         const severityColor = 
           consideration.severity === 'high' ? 'bg-destructive/20 hover:bg-destructive/30' :
-          consideration.severity === 'medium' ? 'bg-warning/20 hover:bg-warning/30' :
+          consideration.severity === 'medium' ? 'bg-info/20 hover:bg-info/30' :
           'bg-info/20 hover:bg-info/30';
         
         const tooltip = `
@@ -442,12 +442,6 @@ function MarketingAnalysis() {
                   <div className="mb-2">
                     <span className="font-medium text-foreground">Analysis:</span>
                     <p className="mt-1 text-foreground">{consideration.analysis}</p>
-                  </div>
-                  <div>
-                    <span className="font-medium text-foreground">Recommended Action:</span>
-                    <div className="mt-1 p-2 bg-background rounded border border-border">
-                      {consideration.recommended_action}
-                    </div>
                   </div>
                 </div>
               ))}

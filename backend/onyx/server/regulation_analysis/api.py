@@ -97,13 +97,10 @@ class RegulationDescriptor:
             {user_input}
             ====================
 
-            Regulations you would consider:
+            Regulations and articles you would consider:
             {json.dumps(regulations_data, indent=2)}
 
-            Articles for those regulations you would consider:
-            {json.dumps(articles_data, indent=2)}
-
-            Citations for those regulations you would consider:
+            Citations from the regulations you would consider:
             {json.dumps(citations_data, indent=2)}
 
             Given this information, please analyze the text in its full marketing and business context. Consider that:
@@ -118,12 +115,11 @@ class RegulationDescriptor:
             3. A nuanced analysis that considers:
             - Whether this is truly problematic or just needs supporting documentation/procedures
             - The likely business context behind the statement
-            - Whether this represents a true risk or merely an area to monitor
+            - Whether this represents a true risk with potential financial penalty or merely an area to monitor
             4. The severity level using these guidelines:
-            - HIGH: Clear violation with no reasonable interpretation otherwise
-            - MEDIUM: Potential issue if certain business practices aren't in place
-            - LOW: Area to monitor or document, but likely addressed through standard business practices
-            5. Recommended action (which could include "No change needed, but ensure internal documentation exists")
+            - HIGH: Clear violation with no reasonable interpretation otherwise. Significant risk of penalty.
+            - MEDIUM: Potential issue if certain business practices aren't in place. Minor risk of penalty.
+            - LOW: Area to monitor or document, but likely addressed through standard business practices. 
 
             Provide your response as a JSON object with the following structure:
             {{
@@ -135,7 +131,6 @@ class RegulationDescriptor:
                             "article": "Specific article number/name",
                             "analysis": "Nuanced analysis considering context and business realities",
                             "severity": "high|medium|low",
-                            "recommended_action": "Suggested action or documentation need"
                         }}
                     ]
                 }}
@@ -145,13 +140,14 @@ class RegulationDescriptor:
         async for response in self._call_llm_with_template(summary_prompt, "summary"):
             yield response
     
-    async def get_regulations(self, user_input: str) -> AsyncGenerator[str, None]:
+    async def get_regulations_articles(self, user_input: str) -> AsyncGenerator[str, None]:
         regulations_prompt = f"""
             You are a compliance and regulations officer working in a fintech company.
             Part of your role is to provide feedback on marketing materials to ensure they are compliant with the regulations that apply to marketing
             and not misleading to consumers. 
 
-            For the following text, please identify all regulations that you would consider when providing feedback on the marketing text.
+            For the following text, please identify all regulations that you would consider when providing feedback on the marketing text. For each regulation,
+            also provide the specific article numbers that you would consider when providing feedback on the marketing text.
             
             ====================
             {user_input}
@@ -167,49 +163,25 @@ class RegulationDescriptor:
             you are aware of that apply to the text. 
             - Do not group regulations together in an entry. E.g. "Data Privacy Regulations e.g. GDPR, CCPA"
             is incorrect - this should be two separate entries "GDPR" and "CCPA". 
+            - Regulation names should not contain article numbers. E.g. "FINRA Rule 110" is incorrect - this should be regulation "FINRA" and article "Rule 110"
+            - The article number should reference a specific article in a regulation. E.g. for consumer liability in Regulation E, it should be "§ 1005.6".
             - Do not list areas of regulations. E.g. "Know Your Customer (KYC) Regulations" is not itself a regulation, but an area covered by regulations such as CFPB.
             - Make your answer as complete as possible. If you miss any regulations, the user may be subject to penalties.
             {{"regulations": [
                 {{
                     "regulation": "Regulation Name",
-                    "description": "Description of how the user input relates to this regulation, considering business context"
+                    "articles": [
+                        {{
+                            "article": "Article Name / Article Number",
+                            "description": "Description of how the text relates to this article, considering business context"
+                        }},
+                    ],
+                    "description": "Description of how the text relates to this regulation, considering business context"
                 }},
                 ...
             ]}}
         """
         async for response in self._call_llm_with_template(regulations_prompt, "regulation"):
-            yield response
-
-    async def get_articles_for_regulations(self, user_input: str, regulation: dict) -> AsyncGenerator[str, None]:
-        articles_prompt = f"""
-            You are a compliance and regulations officer working in a fintech company.
-            Part of your role is to provide feedback on marketing materials to ensure they are compliant with the regulations that apply to marketing
-            and not misleading to consumers. 
-
-            For the following text, please identify all articles from the regulation "{regulation['regulation']}" that you would consider when providing feedback on the marketing text.
-            ====================
-            {user_input}
-            ====================
-            
-            Important: This is marketing text that necessarily simplifies complex business operations. When determining relevance:
-            - Consider the likely underlying business processes, not just the exact wording
-            - Distinguish between articles that would require explicit statements in marketing vs. those addressed in operational documents
-            
-            Provide a list of articles that apply to the regulation. Give exact article numbers, e.g. for CFPB consumer liability I would expect "§ 1005.6".
-            - Make your answer as complete as possible. If you miss any articles, the user may be subject to penalties.
-            Provide your response as a JSON array of objects:
-            {{
-                "articles": [
-                    {{
-                        "regulation": "Regulation Name",
-                        "article": "Article Name / Article Number",  
-                        "description": "Description of how the user input relates to this article, considering business context"
-                    }},
-                    ...
-                ]
-            }}
-        """
-        async for response in self._call_llm_with_template(articles_prompt, "article"):
             yield response
 
     async def get_citations_for_article(self, user_input: str, article: dict, related_doc: dict | None = None) -> AsyncGenerator[str, None]:
@@ -404,7 +376,7 @@ async def analyze(
                 logger.info(f"[{request_id}] Starting regulations analysis")
                 regulations_start_time = time.time()
                 
-                async for chunk in descriptor.get_regulations(request.text):
+                async for chunk in descriptor.get_regulations_articles(request.text):
                     data = json.loads(chunk)
                     yield f"data: {chunk}"
                     if data['type'] == 'regulation' and data.get('content'):
@@ -428,40 +400,29 @@ async def analyze(
                 # Process all regulations in parallel to get articles
                 num_regulations = len(regulations_response.get('regulations', []))
                 logger.info(f"[{request_id}] Processing {num_regulations} regulations in parallel")
-                articles_start_time = time.time()
                 regulations = regulations_response.get('regulations', [])
-                
-                async def process_regulation_articles(regulation):
-                    reg_start_time = time.time()
-                    articles_response = None
-                    try:
-                        logger.info(f"[{request_id}] Processing articles for regulation: {regulation.get('regulation', 'Unknown')}")
-                        chunks = []
-                        async for chunk in descriptor.get_articles_for_regulations(request.text, regulation):
-                            data = json.loads(chunk)
-                            chunks.append(chunk)
-                            if data['type'] == 'article':
-                                articles_response = json.loads(data['content'])
-                        reg_time = time.time() - reg_start_time
-                        logger.info(f"[{request_id}] Completed articles for regulation {regulation.get('regulation', 'Unknown')} in {reg_time:.2f} seconds")
-                        return chunks, articles_response
-                    except Exception as e:
-                        logger.error(f"[{request_id}] Error processing articles for regulation {regulation.get('regulation', 'Unknown')}: {str(e)}", exc_info=True)
-                        return [json.dumps({'type': 'error', 'content': f'Error processing articles: {str(e)}'})], None
-                
-                try:
-                    results = await asyncio.gather(*[process_regulation_articles(reg) for reg in regulations])
-                    articles_time = time.time() - articles_start_time
-                    logger.info(f"[{request_id}] Completed all article processing in {articles_time:.2f} seconds")
-                    
-                    for chunks, articles in results:
-                        for chunk in chunks:
-                            yield f"data: {chunk}"
-                        if articles:
-                            article_results.extend(articles.get('articles', []))
-                except Exception as e:
-                    logger.error(f"[{request_id}] Error in parallel article processing: {str(e)}", exc_info=True)
 
+                articles_start_time = time.time()
+                logger.info(f"[{request_id}] Starting article processing")
+                
+                # First stream each regulation
+                for regulation in regulations:
+                    regulation_name = regulation.get('regulation')
+                    yield f"data: {json.dumps({'type': 'regulation', 'content': {'regulations': [regulation]}})}\n\n"
+                    # Process articles for this regulation
+                    for article in regulation.get('articles', []):
+                        article_data = {
+                            'regulation': regulation_name,
+                            'article': article.get('article'),
+                            'description': article.get('description')
+                        }
+                        article_results.append(article_data)
+                        # Stream each article individually
+                        yield f"data: {json.dumps({'type': 'article', 'content': {'articles': [article_data]}})}\n\n"
+                
+                articles_time = time.time() - articles_start_time
+                logger.info(f"[{request_id}] Completed article processing in {articles_time:.2f} seconds")
+               
                 # Search for related documents if we have regulations and articles
                 if regulations_response and article_results:
                     logger.info(f"[{request_id}] Starting document search with {len(article_results)} articles")
