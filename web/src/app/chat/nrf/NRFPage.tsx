@@ -49,7 +49,6 @@ export default function NRFPage({
     defaultDarkBackgroundUrl,
     shortcuts: shortCuts,
     setShortcuts: setShortCuts,
-    setUseOnyxAsNewTab,
     showShortcuts,
   } = useNRFPreferences();
 
@@ -101,7 +100,6 @@ export default function NRFPage({
     if (!checked) {
       setShowTurnOffModal(true);
     } else {
-      setUseOnyxAsNewTab(true);
       sendSetDefaultNewTabMessage(true);
     }
   };
@@ -147,7 +145,6 @@ export default function NRFPage({
   };
 
   const confirmTurnOff = () => {
-    setUseOnyxAsNewTab(false);
     setShowTurnOffModal(false);
     sendSetDefaultNewTabMessage(false);
   };
@@ -315,7 +312,7 @@ export default function NRFPage({
       <SettingsPanel
         settingsOpen={settingsOpen}
         toggleSettings={toggleSettings}
-        handleUseOnyxToggle={handleUseOnyxToggle}
+        handleUseDialinToggle={handleUseOnyxToggle}
       />
 
       <Dialog open={showTurnOffModal} onOpenChange={setShowTurnOffModal}>
