@@ -27,10 +27,8 @@ from onyx.file_store.utils import InMemoryChatFile
 from onyx.llm.interfaces import LLM
 from onyx.tools.force import ForceUseTool
 from onyx.tools.tool import Tool
-from onyx.tools.tool_implementations.search.search_tool import QUERY_FIELD
 from onyx.tools.tool_implementations.search.search_tool import SearchTool
 from onyx.tools.utils import explicit_tool_calling_supported
-from onyx.utils.gpu_utils import fast_gpu_status_request
 from onyx.utils.logger import setup_logger
 
 logger = setup_logger()
@@ -82,28 +80,6 @@ class Answer:
             and not skip_explicit_tool_calling
         )
 
-        rerank_settings = search_request.rerank_settings
-
-        using_cloud_reranking = (
-            rerank_settings is not None
-            and rerank_settings.rerank_provider_type is not None
-        )
-        allow_agent_reranking = (
-            fast_gpu_status_request(indexing=False) or using_cloud_reranking
-        )
-
-        # TODO: this is a hack to force the query to be used for the search tool
-        #       this should be removed once we fully unify graph inputs (i.e.
-        #       remove SearchQuery entirely)
-        if (
-            force_use_tool.force_use
-            and search_tool
-            and force_use_tool.args
-            and force_use_tool.tool_name == search_tool.name
-            and QUERY_FIELD in force_use_tool.args
-        ):
-            search_request.query = force_use_tool.args[QUERY_FIELD]
-
         self.graph_inputs = GraphInputs(
             search_request=search_request,
             prompt_builder=prompt_builder,
@@ -118,6 +94,7 @@ class Answer:
             force_use_tool=force_use_tool,
             using_tool_calling_llm=using_tool_calling_llm,
         )
+        assert db_session, "db_session must be provided for agentic persistence"
         self.graph_persistence = GraphPersistence(
             db_session=db_session,
             chat_session_id=chat_session_id,
@@ -127,7 +104,6 @@ class Answer:
             use_agentic_search=use_agentic_search,
             skip_gen_ai_answer_generation=skip_gen_ai_answer_generation,
             allow_refinement=True,
-            allow_agent_reranking=allow_agent_reranking,
         )
         self.graph_config = GraphConfig(
             inputs=self.graph_inputs,
@@ -207,7 +183,6 @@ class Answer:
         citations_by_subquestion: dict[
             SubQuestionKey, list[CitationInfo]
         ] = defaultdict(list)
-        basic_subq_key = SubQuestionKey(level=BASIC_KEY[0], question_num=BASIC_KEY[1])
         for packet in self.processed_streamed_output:
             if isinstance(packet, CitationInfo):
                 if packet.level_question_num is not None and packet.level is not None:
@@ -217,7 +192,7 @@ class Answer:
                         )
                     ].append(packet)
                 elif packet.level is None:
-                    citations_by_subquestion[basic_subq_key].append(packet)
+                    citations_by_subquestion[BASIC_SQ_KEY].append(packet)
         return citations_by_subquestion
 
     def is_cancelled(self) -> bool:

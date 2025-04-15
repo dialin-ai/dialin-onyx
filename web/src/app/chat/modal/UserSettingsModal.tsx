@@ -27,7 +27,6 @@ import { Input } from "@/components/ui/input";
 import { FiTrash2 } from "react-icons/fi";
 import { deleteAllChatSessions } from "../lib";
 import { useChatContext } from "@/components/context/ChatContext";
-import { UserRole } from "@/lib/types";
 
 type SettingsSection = "settings" | "password";
 
@@ -65,7 +64,6 @@ export function UserSettingsModal({
     useState<SettingsSection>("settings");
   const [isDeleteAllLoading, setIsDeleteAllLoading] = useState(false);
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
-  const isDemoUser = user?.role === UserRole.DEMO;
 
   useEffect(() => {
     const container = containerRef.current;
@@ -384,57 +382,47 @@ export function UserSettingsModal({
                   />
                 </div>
                 <div className="pt-4 border-t border-border">
-                  {!isDemoUser ? (
-                    <>
-                      {!showDeleteConfirmation ? (
-                        <div className="space-y-3">
-                          <p className="text-sm text-neutral-600 ">
-                            This will permanently delete all your chat sessions and
-                            cannot be undone.
-                          </p>
-                          <Button
-                            variant="destructive"
-                            className="w-full flex items-center justify-center"
-                            onClick={() => setShowDeleteConfirmation(true)}
-                          >
-                            <FiTrash2 className="mr-2" size={14} />
-                            Delete All Chats
-                          </Button>
-                        </div>
-                      ) : (
-                        <div className="space-y-3">
-                          <p className="text-sm text-neutral-600 ">
-                            Are you sure you want to delete all your chat sessions?
-                          </p>
-                          <div className="flex gap-2">
-                            <Button
-                              type="button"
-                              variant="destructive"
-                              className="flex-1 flex items-center justify-center"
-                              onClick={handleDeleteAllChats}
-                              disabled={isDeleteAllLoading}
-                            >
-                              {isDeleteAllLoading
-                                ? "Deleting..."
-                                : "Yes, Delete All"}
-                            </Button>
-                            <Button
-                              variant="outline"
-                              className="flex-1"
-                              onClick={() => setShowDeleteConfirmation(false)}
-                              disabled={isDeleteAllLoading}
-                            >
-                              Cancel
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-                    </>
+                  {!showDeleteConfirmation ? (
+                    <div className="space-y-3">
+                      <p className="text-sm text-neutral-600 ">
+                        This will permanently delete all your chat sessions and
+                        cannot be undone.
+                      </p>
+                      <Button
+                        variant="destructive"
+                        className="w-full flex items-center justify-center"
+                        onClick={() => setShowDeleteConfirmation(true)}
+                      >
+                        <FiTrash2 className="mr-2" size={14} />
+                        Delete All Chats
+                      </Button>
+                    </div>
                   ) : (
                     <div className="space-y-3">
-                      <p className="text-sm text-neutral-600">
-                        Demo users cannot delete chat conversations.
+                      <p className="text-sm text-neutral-600 ">
+                        Are you sure you want to delete all your chat sessions?
                       </p>
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          className="flex-1 flex items-center justify-center"
+                          onClick={handleDeleteAllChats}
+                          disabled={isDeleteAllLoading}
+                        >
+                          {isDeleteAllLoading
+                            ? "Deleting..."
+                            : "Yes, Delete All"}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          className="flex-1"
+                          onClick={() => setShowDeleteConfirmation(false)}
+                          disabled={isDeleteAllLoading}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
                     </div>
                   )}
                 </div>

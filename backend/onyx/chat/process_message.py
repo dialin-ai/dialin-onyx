@@ -7,12 +7,9 @@ from typing import cast
 
 from sqlalchemy.orm import Session
 
-from onyx.agents.agent_search.orchestration.nodes.call_tool import ToolCallException
 from onyx.chat.answer import Answer
 from onyx.chat.chat_utils import create_chat_chain
 from onyx.chat.chat_utils import create_temporary_persona
-from onyx.chat.models import AgenticMessageResponseIDInfo
-from onyx.chat.models import AgentMessageIDInfo
 from onyx.chat.models import AgentSearchPacket
 from onyx.chat.models import AllCitations
 from onyx.chat.models import AnswerPostInfo
@@ -29,6 +26,7 @@ from onyx.chat.models import LLMRelevanceFilterResponse
 from onyx.chat.models import MessageResponseIDInfo
 from onyx.chat.models import MessageSpecificCitations
 from onyx.chat.models import OnyxAnswerPiece
+from onyx.chat.models import OnyxContexts
 from onyx.chat.models import PromptConfig
 from onyx.chat.models import QADocsResponse
 from onyx.chat.models import RefinedAnswerImprovement
@@ -72,7 +70,6 @@ from onyx.db.chat import get_or_create_root_message
 from onyx.db.chat import reserve_message_id
 from onyx.db.chat import translate_db_message_to_chat_message_detail
 from onyx.db.chat import translate_db_search_doc_to_server_search_doc
-from onyx.db.chat import update_chat_session_updated_at_timestamp
 from onyx.db.engine import get_session_context_manager
 from onyx.db.milestone import check_multi_assistant_milestone
 from onyx.db.milestone import create_milestone_if_not_exists
@@ -90,7 +87,6 @@ from onyx.file_store.utils import save_files
 from onyx.llm.exceptions import GenAIDisabledException
 from onyx.llm.factory import get_llms_for_persona
 from onyx.llm.factory import get_main_llm_from_tuple
-from onyx.llm.interfaces import LLM
 from onyx.llm.models import PreviousMessage
 from onyx.llm.utils import litellm_exception_to_error_msg
 from onyx.natural_language_processing.utils import get_tokenizer
@@ -130,6 +126,7 @@ from onyx.tools.tool_implementations.internet_search.internet_search_tool import
 from onyx.tools.tool_implementations.search.search_tool import (
     FINAL_CONTEXT_DOCUMENTS_ID,
 )
+from onyx.tools.tool_implementations.search.search_tool import SEARCH_DOC_CONTENT_ID
 from onyx.tools.tool_implementations.search.search_tool import (
     SEARCH_RESPONSE_SUMMARY_ID,
 )
@@ -144,10 +141,9 @@ from onyx.utils.long_term_log import LongTermLogger
 from onyx.utils.telemetry import mt_cloud_telemetry
 from onyx.utils.timing import log_function_time
 from onyx.utils.timing import log_generator_function_time
-from shared_configs.contextvars import get_current_tenant_id
+from shared_configs.contextvars import CURRENT_TENANT_ID_CONTEXTVAR
 
 logger = setup_logger()
-ERROR_TYPE_CANCELLED = "cancelled"
 
 
 def _translate_citations(
@@ -298,6 +294,7 @@ def _get_force_search_settings(
 ChatPacket = (
     StreamingError
     | QADocsResponse
+    | OnyxContexts
     | LLMRelevanceFilterResponse
     | FinalUsedContextDocsResponse
     | ChatMessageDetail
@@ -308,7 +305,6 @@ ChatPacket = (
     | CustomToolResponse
     | MessageSpecificCitations
     | MessageResponseIDInfo
-    | AgenticMessageResponseIDInfo
     | StreamStopInfo
     | AgentSearchPacket
 )
@@ -344,7 +340,7 @@ def stream_chat_message_objects(
     3. [always] A set of streamed LLM tokens or an error anywhere along the line if something fails
     4. [always] Details on the final AI response message that is created
     """
-    tenant_id = get_current_tenant_id()
+    tenant_id = CURRENT_TENANT_ID_CONTEXTVAR.get()
     use_existing_user_message = new_msg_req.use_existing_user_message
     existing_assistant_message_id = new_msg_req.existing_assistant_message_id
 
@@ -353,8 +349,7 @@ def stream_chat_message_objects(
     new_msg_req.chunks_above = 0
     new_msg_req.chunks_below = 0
 
-    llm: LLM
-
+    llm = None
     try:
         user_id = user.id if user is not None else None
 
@@ -633,7 +628,6 @@ def stream_chat_message_objects(
             db_session=db_session,
             commit=False,
             reserved_message_id=reserved_message_id,
-            is_agentic=new_msg_req.use_agentic_search,
         )
 
         prompt_override = new_msg_req.prompt_override or chat_session.prompt_override
@@ -745,16 +739,16 @@ def stream_chat_message_objects(
                 files=latest_query_files,
                 single_message_history=single_message_history,
             ),
-            system_message=default_build_system_message(prompt_config, llm.config),
+            system_message=default_build_system_message(prompt_config),
             message_history=message_history,
             llm_config=llm.config,
             raw_user_query=final_msg.message,
             raw_user_uploaded_files=latest_query_files or [],
             single_message_history=single_message_history,
         )
+        prompt_builder.update_system_prompt(default_build_system_message(prompt_config))
 
         # LLM prompt building, response capturing, etc.
-
         answer = Answer(
             prompt_builder=prompt_builder,
             is_connected=is_connected,
@@ -868,6 +862,7 @@ def stream_chat_message_objects(
                             for img in img_generation_response
                             if img.image_data
                         ],
+                        tenant_id=tenant_id,
                     )
                     info.ai_message_files.extend(
                         [
@@ -916,6 +911,8 @@ def stream_chat_message_objects(
                             response=custom_tool_response.tool_result,
                             tool_name=custom_tool_response.tool_name,
                         )
+                elif packet.id == SEARCH_DOC_CONTENT_ID and include_contexts:
+                    yield cast(OnyxContexts, packet.response)
 
             elif isinstance(packet, StreamStopInfo):
                 if packet.stop_reason == StreamStopReason.FINISHED:
@@ -946,25 +943,19 @@ def stream_chat_message_objects(
         return
 
     except Exception as e:
-        logger.exception(f"Failed to process chat message due to {e}")
+        logger.exception("Failed to process chat message.")
+
         error_msg = str(e)
         stack_trace = traceback.format_exc()
+        if llm:
+            client_error_msg = litellm_exception_to_error_msg(e, llm)
+            if llm.config.api_key and len(llm.config.api_key) > 2:
+                error_msg = error_msg.replace(llm.config.api_key, "[REDACTED_API_KEY]")
+                stack_trace = stack_trace.replace(
+                    llm.config.api_key, "[REDACTED_API_KEY]"
+                )
 
-        if isinstance(e, ToolCallException):
-            yield StreamingError(error=error_msg, stack_trace=stack_trace)
-        else:
-            if llm:
-                client_error_msg = litellm_exception_to_error_msg(e, llm)
-                if llm.config.api_key and len(llm.config.api_key) > 2:
-                    error_msg = error_msg.replace(
-                        llm.config.api_key, "[REDACTED_API_KEY]"
-                    )
-                    stack_trace = stack_trace.replace(
-                        llm.config.api_key, "[REDACTED_API_KEY]"
-                    )
-
-                yield StreamingError(error=client_error_msg, stack_trace=stack_trace)
-
+            yield StreamingError(error=client_error_msg, stack_trace=stack_trace)
         db_session.rollback()
         return
 
@@ -1015,7 +1006,7 @@ def stream_chat_message_objects(
                 if info.message_specific_citations
                 else None
             ),
-            error=ERROR_TYPE_CANCELLED if answer.is_cancelled() else None,
+            error=None,
             tool_call=(
                 ToolCall(
                     tool_id=tool_name_to_tool_id[info.tool_result.tool_name],
@@ -1033,7 +1024,6 @@ def stream_chat_message_objects(
         next_level = 1
         prev_message = gen_ai_response_message
         agent_answers = answer.llm_answer_by_level()
-        agentic_message_ids = []
         while next_level in agent_answers:
             next_answer = agent_answers[next_level]
             info = info_by_subq[
@@ -1054,24 +1044,19 @@ def stream_chat_message_objects(
                 citations=info.message_specific_citations.citation_map
                 if info.message_specific_citations
                 else None,
-                error=ERROR_TYPE_CANCELLED if answer.is_cancelled() else None,
                 refined_answer_improvement=refined_answer_improvement,
-                is_agentic=True,
-            )
-            agentic_message_ids.append(
-                AgentMessageIDInfo(level=next_level, message_id=next_answer_message.id)
             )
             next_level += 1
             prev_message = next_answer_message
 
         logger.debug("Committing messages")
-        # Explicitly update the timestamp on the chat session
-        update_chat_session_updated_at_timestamp(chat_session_id, db_session)
         db_session.commit()  # actually save user / assistant message
 
-        yield AgenticMessageResponseIDInfo(agentic_message_ids=agentic_message_ids)
+        msg_detail_response = translate_db_message_to_chat_message_detail(
+            gen_ai_response_message
+        )
 
-        yield translate_db_message_to_chat_message_detail(gen_ai_response_message)
+        yield msg_detail_response
     except Exception as e:
         error_msg = str(e)
         logger.exception(error_msg)

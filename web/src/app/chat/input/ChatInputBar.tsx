@@ -29,7 +29,7 @@ import UnconfiguredProviderText from "@/components/chat/UnconfiguredProviderText
 import { useAssistants } from "@/components/context/AssistantsContext";
 import { CalendarIcon, TagIcon, XIcon } from "lucide-react";
 import { FilterPopup } from "@/components/search/filtering/FilterPopup";
-import { DocumentSet, Tag } from "@/lib/types";
+import { DocumentSet, Tag, UserRole } from "@/lib/types";
 import { SourceIcon } from "@/components/SourceIcon";
 import { getFormattedDateRangeString } from "@/lib/dateUtils";
 import { truncateString } from "@/lib/utils";
@@ -779,12 +779,14 @@ export function ChatInputBar({
                   tooltipContent={"Upload files"}
                 />
 
-                <LLMPopover
-                  llmProviders={llmProviders}
-                  llmManager={llmManager}
-                  requiresImageGeneration={false}
-                  currentAssistant={selectedAssistant}
-                />
+                {user?.role !== UserRole.DEMO && (
+                    <LLMPopover
+                      llmProviders={llmProviders}
+                      llmManager={llmManager}
+                      requiresImageGeneration={false}
+                      currentAssistant={selectedAssistant}
+                  />
+                )}
 
                 {retrievalEnabled && (
                   <FilterPopup

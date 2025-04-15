@@ -59,7 +59,6 @@ def build_next_prompt_for_search_like_tool(
                 else False
             ),
             history_message=prompt_builder.single_message_history or "",
-            context_type=context_type,
         )
     )
 

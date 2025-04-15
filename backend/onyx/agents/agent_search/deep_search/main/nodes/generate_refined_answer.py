@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 from typing import cast
 
 from langchain_core.messages import HumanMessage
@@ -10,50 +11,27 @@ from onyx.agents.agent_search.deep_search.main.models import (
     AgentRefinedMetrics,
 )
 from onyx.agents.agent_search.deep_search.main.operations import get_query_info
+from onyx.agents.agent_search.deep_search.main.operations import logger
 from onyx.agents.agent_search.deep_search.main.states import MainState
 from onyx.agents.agent_search.deep_search.main.states import (
     RefinedAnswerUpdate,
 )
 from onyx.agents.agent_search.models import GraphConfig
 from onyx.agents.agent_search.shared_graph_utils.agent_prompt_ops import (
-    binary_string_test_after_answer_separator,
-)
-from onyx.agents.agent_search.shared_graph_utils.agent_prompt_ops import (
     get_prompt_enrichment_components,
 )
 from onyx.agents.agent_search.shared_graph_utils.agent_prompt_ops import (
     trim_prompt_piece,
 )
-from onyx.agents.agent_search.shared_graph_utils.calculations import (
-    get_answer_generation_documents,
-)
-from onyx.agents.agent_search.shared_graph_utils.constants import AGENT_ANSWER_SEPARATOR
-from onyx.agents.agent_search.shared_graph_utils.constants import (
-    AGENT_LLM_RATELIMIT_MESSAGE,
-)
-from onyx.agents.agent_search.shared_graph_utils.constants import (
-    AGENT_LLM_TIMEOUT_MESSAGE,
-)
-from onyx.agents.agent_search.shared_graph_utils.constants import (
-    AGENT_POSITIVE_VALUE_STR,
-)
-from onyx.agents.agent_search.shared_graph_utils.constants import (
-    AgentLLMErrorType,
-)
-from onyx.agents.agent_search.shared_graph_utils.models import AgentErrorLog
-from onyx.agents.agent_search.shared_graph_utils.models import LLMNodeErrorStrings
+from onyx.agents.agent_search.shared_graph_utils.models import InferenceSection
 from onyx.agents.agent_search.shared_graph_utils.models import RefinedAgentStats
 from onyx.agents.agent_search.shared_graph_utils.operators import (
-    dedup_inference_section_list,
+    dedup_inference_sections,
 )
-from onyx.agents.agent_search.shared_graph_utils.utils import _should_restrict_tokens
 from onyx.agents.agent_search.shared_graph_utils.utils import (
     dispatch_main_answer_stop_info,
 )
 from onyx.agents.agent_search.shared_graph_utils.utils import format_docs
-from onyx.agents.agent_search.shared_graph_utils.utils import (
-    get_deduplicated_structured_subquestion_documents,
-)
 from onyx.agents.agent_search.shared_graph_utils.utils import (
     get_langgraph_node_log_string,
 )
@@ -65,27 +43,8 @@ from onyx.agents.agent_search.shared_graph_utils.utils import (
 from onyx.agents.agent_search.shared_graph_utils.utils import write_custom_event
 from onyx.chat.models import AgentAnswerPiece
 from onyx.chat.models import ExtendedToolResponse
-from onyx.chat.models import StreamingError
-from onyx.configs.agent_configs import AGENT_ANSWER_GENERATION_BY_FAST_LLM
 from onyx.configs.agent_configs import AGENT_MAX_ANSWER_CONTEXT_DOCS
-from onyx.configs.agent_configs import AGENT_MAX_STREAMED_DOCS_FOR_REFINED_ANSWER
-from onyx.configs.agent_configs import AGENT_MAX_TOKENS_ANSWER_GENERATION
-from onyx.configs.agent_configs import AGENT_MAX_TOKENS_VALIDATION
 from onyx.configs.agent_configs import AGENT_MIN_ORIG_QUESTION_DOCS
-from onyx.configs.agent_configs import (
-    AGENT_TIMEOUT_CONNECT_LLM_REFINED_ANSWER_GENERATION,
-)
-from onyx.configs.agent_configs import (
-    AGENT_TIMEOUT_CONNECT_LLM_REFINED_ANSWER_VALIDATION,
-)
-from onyx.configs.agent_configs import (
-    AGENT_TIMEOUT_LLM_REFINED_ANSWER_GENERATION,
-)
-from onyx.configs.agent_configs import (
-    AGENT_TIMEOUT_LLM_REFINED_ANSWER_VALIDATION,
-)
-from onyx.llm.chat_llm import LLMRateLimitError
-from onyx.llm.chat_llm import LLMTimeoutError
 from onyx.prompts.agent_search import (
     REFINED_ANSWER_PROMPT_W_SUB_QUESTIONS,
 )
@@ -93,32 +52,17 @@ from onyx.prompts.agent_search import (
     REFINED_ANSWER_PROMPT_WO_SUB_QUESTIONS,
 )
 from onyx.prompts.agent_search import (
-    REFINED_ANSWER_VALIDATION_PROMPT,
-)
-from onyx.prompts.agent_search import (
     SUB_QUESTION_ANSWER_TEMPLATE_REFINED,
 )
 from onyx.prompts.agent_search import UNKNOWN_ANSWER
 from onyx.tools.tool_implementations.search.search_tool import yield_search_responses
-from onyx.utils.logger import setup_logger
-from onyx.utils.threadpool_concurrency import run_with_timeout
-from onyx.utils.timing import log_function_time
-
-logger = setup_logger()
-
-_llm_node_error_strings = LLMNodeErrorStrings(
-    timeout="The LLM timed out. The refined answer could not be generated.",
-    rate_limit="The LLM encountered a rate limit. The refined answer could not be generated.",
-    general_error="The LLM encountered an error. The refined answer could not be generated.",
-)
 
 
-@log_function_time(print_only=True)
-def generate_validate_refined_answer(
+def generate_refined_answer(
     state: MainState, config: RunnableConfig, writer: StreamWriter = lambda _: None
 ) -> RefinedAnswerUpdate:
     """
-    LangGraph node to generate the refined answer and validate it.
+    LangGraph node to generate the refined answer.
     """
 
     node_start_time = datetime.now()
@@ -132,24 +76,19 @@ def generate_validate_refined_answer(
     )
 
     verified_reranked_documents = state.verified_reranked_documents
-
-    # get all documents cited in sub-questions
-    structured_subquestion_docs = get_deduplicated_structured_subquestion_documents(
-        state.sub_question_results
-    )
-
+    sub_questions_cited_documents = state.cited_documents
     original_question_verified_documents = (
         state.orig_question_verified_reranked_documents
     )
     original_question_retrieved_documents = state.orig_question_retrieved_documents
 
-    consolidated_context_docs = structured_subquestion_docs.cited_documents
+    consolidated_context_docs: list[InferenceSection] = sub_questions_cited_documents
 
     counter = 0
     for original_doc_number, original_doc in enumerate(
         original_question_verified_documents
     ):
-        if original_doc_number not in structured_subquestion_docs.cited_documents:
+        if original_doc_number not in sub_questions_cited_documents:
             if (
                 counter <= AGENT_MIN_ORIG_QUESTION_DOCS
                 or len(consolidated_context_docs)
@@ -160,16 +99,14 @@ def generate_validate_refined_answer(
                 counter += 1
 
     # sort docs by their scores - though the scores refer to different questions
-    relevant_docs = dedup_inference_section_list(consolidated_context_docs)
+    relevant_docs = dedup_inference_sections(
+        consolidated_context_docs, consolidated_context_docs
+    )
 
-    # Create the list of documents to stream out. Start with the
-    # ones that wil be in the context (or, if len == 0, use docs
-    # that were retrieved for the original question)
-    answer_generation_documents = get_answer_generation_documents(
-        relevant_docs=relevant_docs,
-        context_documents=structured_subquestion_docs.context_documents,
-        original_question_docs=original_question_retrieved_documents,
-        max_docs=AGENT_MAX_STREAMED_DOCS_FOR_REFINED_ANSWER,
+    streaming_docs = (
+        relevant_docs
+        if len(relevant_docs) > 0
+        else original_question_retrieved_documents[:15]
     )
 
     query_info = get_query_info(state.orig_question_sub_query_retrieval_results)
@@ -177,13 +114,11 @@ def generate_validate_refined_answer(
         graph_config.tooling.search_tool
     ), "search_tool must be provided for agentic search"
     # stream refined answer docs, or original question docs if no relevant docs are found
-    relevance_list = relevance_from_docs(
-        answer_generation_documents.streaming_documents
-    )
+    relevance_list = relevance_from_docs(relevant_docs)
     for tool_response in yield_search_responses(
         query=question,
-        get_retrieved_sections=lambda: answer_generation_documents.context_documents,
-        get_final_context_sections=lambda: answer_generation_documents.context_documents,
+        reranked_sections=streaming_docs,
+        final_context_sections=streaming_docs,
         search_query_info=query_info,
         get_section_relevance=lambda: relevance_list,
         search_tool=graph_config.tooling.search_tool,
@@ -263,13 +198,8 @@ def generate_validate_refined_answer(
         else REFINED_ANSWER_PROMPT_WO_SUB_QUESTIONS
     )
 
-    model = (
-        graph_config.tooling.fast_llm
-        if AGENT_ANSWER_GENERATION_BY_FAST_LLM
-        else graph_config.tooling.primary_llm
-    )
-
-    relevant_docs_str = format_docs(answer_generation_documents.context_documents)
+    model = graph_config.tooling.fast_llm
+    relevant_docs_str = format_docs(relevant_docs)
     relevant_docs_str = trim_prompt_piece(
         model.config,
         relevant_docs_str,
@@ -299,93 +229,30 @@ def generate_validate_refined_answer(
         )
     ]
 
-    streamed_tokens: list[str] = [""]
+    streamed_tokens: list[str | list[str | dict[str, Any]]] = [""]
     dispatch_timings: list[float] = []
-    agent_error: AgentErrorLog | None = None
-
-    def stream_refined_answer() -> list[str]:
-        for message in model.stream(
-            msg,
-            timeout_override=AGENT_TIMEOUT_CONNECT_LLM_REFINED_ANSWER_GENERATION,
-            max_tokens=AGENT_MAX_TOKENS_ANSWER_GENERATION
-            if _should_restrict_tokens(model.config)
-            else None,
-        ):
-            # TODO: in principle, the answer here COULD contain images, but we don't support that yet
-            content = message.content
-            if not isinstance(content, str):
-                raise ValueError(
-                    f"Expected content to be a string, but got {type(content)}"
-                )
-
-            start_stream_token = datetime.now()
-            write_custom_event(
-                "refined_agent_answer",
-                AgentAnswerPiece(
-                    answer_piece=content,
-                    level=1,
-                    level_question_num=0,
-                    answer_type="agent_level_answer",
-                ),
-                writer,
+    for message in model.stream(msg):
+        # TODO: in principle, the answer here COULD contain images, but we don't support that yet
+        content = message.content
+        if not isinstance(content, str):
+            raise ValueError(
+                f"Expected content to be a string, but got {type(content)}"
             )
-            end_stream_token = datetime.now()
-            dispatch_timings.append(
-                (end_stream_token - start_stream_token).microseconds
-            )
-            streamed_tokens.append(content)
-        return streamed_tokens
 
-    try:
-        streamed_tokens = run_with_timeout(
-            AGENT_TIMEOUT_LLM_REFINED_ANSWER_GENERATION,
-            stream_refined_answer,
-        )
-
-    except (LLMTimeoutError, TimeoutError):
-        agent_error = AgentErrorLog(
-            error_type=AgentLLMErrorType.TIMEOUT,
-            error_message=AGENT_LLM_TIMEOUT_MESSAGE,
-            error_result=_llm_node_error_strings.timeout,
-        )
-        logger.error("LLM Timeout Error - generate refined answer")
-
-    except LLMRateLimitError:
-        agent_error = AgentErrorLog(
-            error_type=AgentLLMErrorType.RATE_LIMIT,
-            error_message=AGENT_LLM_RATELIMIT_MESSAGE,
-            error_result=_llm_node_error_strings.rate_limit,
-        )
-        logger.error("LLM Rate Limit Error - generate refined answer")
-
-    if agent_error:
+        start_stream_token = datetime.now()
         write_custom_event(
-            "initial_agent_answer",
-            StreamingError(
-                error=AGENT_LLM_TIMEOUT_MESSAGE,
+            "refined_agent_answer",
+            AgentAnswerPiece(
+                answer_piece=content,
+                level=1,
+                level_question_num=0,
+                answer_type="agent_level_answer",
             ),
             writer,
         )
-
-        return RefinedAnswerUpdate(
-            refined_answer=None,
-            refined_answer_quality=False,  # TODO: replace this with the actual check value
-            refined_agent_stats=None,
-            agent_refined_end_time=None,
-            agent_refined_metrics=AgentRefinedMetrics(
-                refined_doc_boost_factor=0.0,
-                refined_question_boost_factor=0.0,
-                duration_s=None,
-            ),
-            log_messages=[
-                get_langgraph_node_log_string(
-                    graph_component="main",
-                    node_name="generate refined answer",
-                    node_start_time=node_start_time,
-                    result=agent_error.error_result or "An LLM error occurred",
-                )
-            ],
-        )
+        end_stream_token = datetime.now()
+        dispatch_timings.append((end_stream_token - start_stream_token).microseconds)
+        streamed_tokens.append(content)
 
     logger.debug(
         f"Average dispatch time for refined answer: {sum(dispatch_timings) / len(dispatch_timings)}"
@@ -394,47 +261,57 @@ def generate_validate_refined_answer(
     response = merge_content(*streamed_tokens)
     answer = cast(str, response)
 
-    # run a validation step for the refined answer only
-
-    msg = [
-        HumanMessage(
-            content=REFINED_ANSWER_VALIDATION_PROMPT.format(
-                question=question,
-                history=prompt_enrichment_components.history,
-                answered_sub_questions=sub_question_answer_str,
-                relevant_docs=relevant_docs_str,
-                proposed_answer=answer,
-                persona_specification=persona_contextualized_prompt,
-            )
-        )
-    ]
-
-    validation_model = graph_config.tooling.fast_llm
-    try:
-        validation_response = run_with_timeout(
-            AGENT_TIMEOUT_LLM_REFINED_ANSWER_VALIDATION,
-            validation_model.invoke,
-            prompt=msg,
-            timeout_override=AGENT_TIMEOUT_CONNECT_LLM_REFINED_ANSWER_VALIDATION,
-            max_tokens=AGENT_MAX_TOKENS_VALIDATION,
-        )
-        refined_answer_quality = binary_string_test_after_answer_separator(
-            text=cast(str, validation_response.content),
-            positive_value=AGENT_POSITIVE_VALUE_STR,
-            separator=AGENT_ANSWER_SEPARATOR,
-        )
-    except (LLMTimeoutError, TimeoutError):
-        refined_answer_quality = True
-        logger.error("LLM Timeout Error - validate refined answer")
-
-    except LLMRateLimitError:
-        refined_answer_quality = True
-        logger.error("LLM Rate Limit Error - validate refined answer")
+    # refined_agent_stats = _calculate_refined_agent_stats(
+    #     state.decomp_answer_results, state.original_question_retrieval_stats
+    # )
 
     refined_agent_stats = RefinedAgentStats(
         revision_doc_efficiency=refined_doc_effectiveness,
         revision_question_efficiency=revision_question_efficiency,
     )
+
+    logger.debug(f"\n\n---INITIAL ANSWER ---\n\n Answer:\n Agent: {initial_answer}")
+    logger.debug("-" * 10)
+    logger.debug(f"\n\n---REVISED AGENT ANSWER ---\n\n Answer:\n Agent: {answer}")
+
+    logger.debug("-" * 100)
+
+    if state.initial_agent_stats:
+        initial_doc_boost_factor = state.initial_agent_stats.agent_effectiveness.get(
+            "utilized_chunk_ratio", "--"
+        )
+        initial_support_boost_factor = (
+            state.initial_agent_stats.agent_effectiveness.get("support_ratio", "--")
+        )
+        num_initial_verified_docs = state.initial_agent_stats.original_question.get(
+            "num_verified_documents", "--"
+        )
+        initial_verified_docs_avg_score = (
+            state.initial_agent_stats.original_question.get("verified_avg_score", "--")
+        )
+        initial_sub_questions_verified_docs = (
+            state.initial_agent_stats.sub_questions.get("num_verified_documents", "--")
+        )
+
+        logger.debug("INITIAL AGENT STATS")
+        logger.debug(f"Document Boost Factor: {initial_doc_boost_factor}")
+        logger.debug(f"Support Boost Factor: {initial_support_boost_factor}")
+        logger.debug(f"Originally Verified Docs: {num_initial_verified_docs}")
+        logger.debug(
+            f"Originally Verified Docs Avg Score: {initial_verified_docs_avg_score}"
+        )
+        logger.debug(
+            f"Sub-Questions Verified Docs: {initial_sub_questions_verified_docs}"
+        )
+    if refined_agent_stats:
+        logger.debug("-" * 10)
+        logger.debug("REFINED AGENT STATS")
+        logger.debug(
+            f"Revision Doc Factor: {refined_agent_stats.revision_doc_efficiency}"
+        )
+        logger.debug(
+            f"Revision Question Factor: {refined_agent_stats.revision_question_efficiency}"
+        )
 
     agent_refined_end_time = datetime.now()
     if state.agent_refined_start_time:
@@ -452,7 +329,7 @@ def generate_validate_refined_answer(
 
     return RefinedAnswerUpdate(
         refined_answer=answer,
-        refined_answer_quality=refined_answer_quality,
+        refined_answer_quality=True,  # TODO: replace this with the actual check value
         refined_agent_stats=refined_agent_stats,
         agent_refined_end_time=agent_refined_end_time,
         agent_refined_metrics=agent_refined_metrics,

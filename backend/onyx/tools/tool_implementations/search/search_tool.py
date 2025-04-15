@@ -57,7 +57,7 @@ SEARCH_RESPONSE_SUMMARY_ID = "search_response_summary"
 SECTION_RELEVANCE_LIST_ID = "section_relevance_list"
 SEARCH_EVALUATION_ID = "llm_doc_eval"
 QUERY_FIELD = "query"
-
+SEARCH_DOC_CONTENT_ID = "search_doc_content"
 
 class SearchResponseSummary(SearchQueryInfo):
     top_sections: list[InferenceSection]

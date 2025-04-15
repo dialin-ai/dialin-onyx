@@ -15,17 +15,8 @@ from onyx.chat.tool_handling.tool_response_handler import get_tool_by_name
 from onyx.chat.tool_handling.tool_response_handler import (
     get_tool_call_for_non_tool_calling_llm_impl,
 )
-from onyx.context.search.preprocessing.preprocessing import query_analysis
-from onyx.context.search.retrieval.search_runner import get_query_embedding
-from onyx.tools.models import SearchToolOverrideKwargs
 from onyx.tools.tool import Tool
-from onyx.tools.tool_implementations.search.search_tool import SearchTool
 from onyx.utils.logger import setup_logger
-from onyx.utils.threadpool_concurrency import run_in_background
-from onyx.utils.threadpool_concurrency import TimeoutThread
-from onyx.utils.threadpool_concurrency import wait_on_background
-from onyx.utils.timing import log_function_time
-from shared_configs.model_server_models import Embedding
 
 logger = setup_logger()
 
@@ -34,8 +25,7 @@ logger = setup_logger()
 # and a function that handles extracting the necessary fields
 # from the state and config
 # TODO: fan-out to multiple tool call nodes? Make this configurable?
-@log_function_time(print_only=True)
-def choose_tool(
+def llm_tool_choice(
     state: ToolChoiceState,
     config: RunnableConfig,
     writer: StreamWriter = lambda _: None,
@@ -47,31 +37,6 @@ def choose_tool(
     should_stream_answer = state.should_stream_answer
 
     agent_config = cast(GraphConfig, config["metadata"]["config"])
-
-    force_use_tool = agent_config.tooling.force_use_tool
-
-    embedding_thread: TimeoutThread[Embedding] | None = None
-    keyword_thread: TimeoutThread[tuple[bool, list[str]]] | None = None
-    override_kwargs: SearchToolOverrideKwargs | None = None
-    if (
-        not agent_config.behavior.use_agentic_search
-        and agent_config.tooling.search_tool is not None
-        and (
-            not force_use_tool.force_use or force_use_tool.tool_name == SearchTool.name
-        )
-    ):
-        override_kwargs = SearchToolOverrideKwargs()
-        # Run in a background thread to avoid blocking the main thread
-        embedding_thread = run_in_background(
-            get_query_embedding,
-            agent_config.inputs.search_request.query,
-            agent_config.persistence.db_session,
-        )
-        keyword_thread = run_in_background(
-            query_analysis,
-            agent_config.inputs.search_request.query,
-        )
-
     using_tool_calling_llm = agent_config.tooling.using_tool_calling_llm
     prompt_builder = state.prompt_snapshot or agent_config.inputs.prompt_builder
 
@@ -82,6 +47,7 @@ def choose_tool(
     tools = [
         tool for tool in (agent_config.tooling.tools or []) if tool.name in state.tools
     ]
+    force_use_tool = agent_config.tooling.force_use_tool
 
     tool, tool_args = None, None
     if force_use_tool.force_use and force_use_tool.args is not None:
@@ -105,22 +71,11 @@ def choose_tool(
     # If we have a tool and tool args, we are ready to request a tool call.
     # This only happens if the tool call was forced or we are using a non-tool calling LLM.
     if tool and tool_args:
-        if embedding_thread and tool.name == SearchTool._NAME:
-            # Wait for the embedding thread to finish
-            embedding = wait_on_background(embedding_thread)
-            assert override_kwargs is not None, "must have override kwargs"
-            override_kwargs.precomputed_query_embedding = embedding
-        if keyword_thread and tool.name == SearchTool._NAME:
-            is_keyword, keywords = wait_on_background(keyword_thread)
-            assert override_kwargs is not None, "must have override kwargs"
-            override_kwargs.precomputed_is_keyword = is_keyword
-            override_kwargs.precomputed_keywords = keywords
         return ToolChoiceUpdate(
             tool_choice=ToolChoice(
                 tool=tool,
                 tool_args=tool_args,
                 id=str(uuid4()),
-                search_tool_override_kwargs=override_kwargs,
             ),
         )
 
@@ -143,16 +98,8 @@ def choose_tool(
         # For tool calling LLMs, we want to insert the task prompt as part of this flow, this is because the LLM
         # may choose to not call any tools and just generate the answer, in which case the task prompt is needed.
         prompt=built_prompt,
-        tools=(
-            [tool.tool_definition() for tool in tools] or None
-            if using_tool_calling_llm
-            else None
-        ),
-        tool_choice=(
-            "required"
-            if tools and force_use_tool.force_use and using_tool_calling_llm
-            else None
-        ),
+        tools=[tool.tool_definition() for tool in tools] or None,
+        tool_choice=("required" if tools and force_use_tool.force_use else None),
         structured_response_format=structured_response_format,
     )
 
@@ -198,22 +145,10 @@ def choose_tool(
     logger.debug(f"Selected tool: {selected_tool.name}")
     logger.debug(f"Selected tool call request: {selected_tool_call_request}")
 
-    if embedding_thread and selected_tool.name == SearchTool._NAME:
-        # Wait for the embedding thread to finish
-        embedding = wait_on_background(embedding_thread)
-        assert override_kwargs is not None, "must have override kwargs"
-        override_kwargs.precomputed_query_embedding = embedding
-    if keyword_thread and selected_tool.name == SearchTool._NAME:
-        is_keyword, keywords = wait_on_background(keyword_thread)
-        assert override_kwargs is not None, "must have override kwargs"
-        override_kwargs.precomputed_is_keyword = is_keyword
-        override_kwargs.precomputed_keywords = keywords
-
     return ToolChoiceUpdate(
         tool_choice=ToolChoice(
             tool=selected_tool,
             tool_args=selected_tool_call_request["args"],
             id=selected_tool_call_request["id"],
-            search_tool_override_kwargs=override_kwargs,
         ),
     )

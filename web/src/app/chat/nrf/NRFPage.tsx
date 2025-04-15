@@ -49,7 +49,7 @@ export default function NRFPage({
     defaultDarkBackgroundUrl,
     shortcuts: shortCuts,
     setShortcuts: setShortCuts,
-    setUseDialinAsNewTab,
+    setUseOnyxAsNewTab,
     showShortcuts,
   } = useNRFPreferences();
 
@@ -96,12 +96,12 @@ export default function NRFPage({
     setSettingsOpen((prev) => !prev);
   };
 
-  // If user toggles the "Use Dialin" switch to off, prompt a modal
-  const handleUseDialinToggle = (checked: boolean) => {
+  // If user toggles the "Use Onyx" switch to off, prompt a modal
+  const handleUseOnyxToggle = (checked: boolean) => {
     if (!checked) {
       setShowTurnOffModal(true);
     } else {
-      setUseDialinAsNewTab(true);
+      setUseOnyxAsNewTab(true);
       sendSetDefaultNewTabMessage(true);
     }
   };
@@ -147,7 +147,7 @@ export default function NRFPage({
   };
 
   const confirmTurnOff = () => {
-    setUseDialinAsNewTab(false);
+    setUseOnyxAsNewTab(false);
     setShowTurnOffModal(false);
     sendSetDefaultNewTabMessage(false);
   };
@@ -315,7 +315,7 @@ export default function NRFPage({
       <SettingsPanel
         settingsOpen={settingsOpen}
         toggleSettings={toggleSettings}
-        handleUseDialinToggle={handleUseDialinToggle}
+        handleUseOnyxToggle={handleUseOnyxToggle}
       />
 
       <Dialog open={showTurnOffModal} onOpenChange={setShowTurnOffModal}>
@@ -347,7 +347,7 @@ export default function NRFPage({
             <p className="p-4">Loading login info…</p>
           ) : authType == "basic" ? (
             <LoginPage
-              showPageRedirect={false} 
+              showPageRedirect
               authUrl={null}
               authTypeMetadata={{
                 authType: authType as AuthType,

@@ -1,13 +1,10 @@
-from collections import OrderedDict
 from collections.abc import Callable
 from collections.abc import Iterator
-from collections.abc import Mapping
 from datetime import datetime
 from enum import Enum
 from typing import Any
 from typing import Literal
 from typing import TYPE_CHECKING
-from typing import Union
 
 from pydantic import BaseModel
 from pydantic import ConfigDict
@@ -47,43 +44,8 @@ class LlmDoc(BaseModel):
 
 
 class SubQuestionIdentifier(BaseModel):
-    """None represents references to objects in the original flow. To our understanding,
-    these will not be None in the packets returned from agent search.
-    """
-
     level: int | None = None
     level_question_num: int | None = None
-
-    @staticmethod
-    def make_dict_by_level(
-        original_dict: Mapping[tuple[int, int], "SubQuestionIdentifier"]
-    ) -> dict[int, list["SubQuestionIdentifier"]]:
-        """returns a dict of level to object list (sorted by level_question_num)
-        Ordering is asc for readability.
-        """
-
-        # organize by level, then sort ascending by question_index
-        level_dict: dict[int, list[SubQuestionIdentifier]] = {}
-
-        # group by level
-        for k, obj in original_dict.items():
-            level = k[0]
-            if level not in level_dict:
-                level_dict[level] = []
-            level_dict[level].append(obj)
-
-        # for each level, sort the group
-        for k2, value2 in level_dict.items():
-            # we need to handle the none case due to SubQuestionIdentifier typing
-            # level_question_num as int | None, even though it should never be None here.
-            level_dict[k2] = sorted(
-                value2,
-                key=lambda x: (x.level_question_num is None, x.level_question_num),
-            )
-
-        # sort by level
-        sorted_dict = OrderedDict(sorted(level_dict.items()))
-        return sorted_dict
 
 
 # First chunk of info for streaming QA
@@ -180,18 +142,20 @@ class MessageResponseIDInfo(BaseModel):
     reserved_assistant_message_id: int
 
 
-class AgentMessageIDInfo(BaseModel):
-    level: int
-    message_id: int
-
-
-class AgenticMessageResponseIDInfo(BaseModel):
-    agentic_message_ids: list[AgentMessageIDInfo]
-
-
 class StreamingError(BaseModel):
     error: str
     stack_trace: str | None = None
+
+
+class OnyxContext(BaseModel):
+    content: str
+    document_id: str
+    semantic_identifier: str
+    blurb: str
+
+
+class OnyxContexts(BaseModel):
+    contexts: list[OnyxContext]
 
 
 class OnyxAnswer(BaseModel):
@@ -259,6 +223,7 @@ class PersonaOverrideConfig(BaseModel):
 AnswerQuestionPossibleReturn = (
     OnyxAnswerPiece
     | CitationInfo
+    | OnyxContexts
     | FileChatDisplay
     | CustomToolResponse
     | StreamingError
@@ -362,8 +327,6 @@ class AgentAnswerPiece(SubQuestionIdentifier):
 
 
 class SubQuestionPiece(SubQuestionIdentifier):
-    """Refined sub questions generated from the initial user question."""
-
     sub_question: str
 
 
@@ -375,13 +338,13 @@ class RefinedAnswerImprovement(BaseModel):
     refined_answer_improvement: bool
 
 
-AgentSearchPacket = Union[
+AgentSearchPacket = (
     SubQuestionPiece
     | AgentAnswerPiece
     | SubQueryPiece
     | ExtendedToolResponse
     | RefinedAnswerImprovement
-]
+)
 
 AnswerPacket = (
     AnswerQuestionPossibleReturn | AgentSearchPacket | ToolCallKickoff | ToolResponse

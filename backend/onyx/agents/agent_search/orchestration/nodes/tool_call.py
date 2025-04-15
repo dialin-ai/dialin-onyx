@@ -20,15 +20,11 @@ from onyx.utils.logger import setup_logger
 logger = setup_logger()
 
 
-class ToolCallException(Exception):
-    """Exception raised for errors during tool calls."""
-
-
 def emit_packet(packet: AnswerPacket, writer: StreamWriter) -> None:
     write_custom_event("basic_response", packet, writer)
 
 
-def call_tool(
+def tool_call(
     state: ToolChoiceUpdate,
     config: RunnableConfig,
     writer: StreamWriter = lambda _: None,
@@ -44,25 +40,18 @@ def call_tool(
     tool = tool_choice.tool
     tool_args = tool_choice.tool_args
     tool_id = tool_choice.id
-    tool_runner = ToolRunner(
-        tool, tool_args, override_kwargs=tool_choice.search_tool_override_kwargs
-    )
+    tool_runner = ToolRunner(tool, tool_args)
     tool_kickoff = tool_runner.kickoff()
 
     emit_packet(tool_kickoff, writer)
 
-    try:
-        tool_responses = []
-        for response in tool_runner.tool_responses():
-            tool_responses.append(response)
-            emit_packet(response, writer)
+    tool_responses = []
+    for response in tool_runner.tool_responses():
+        tool_responses.append(response)
+        emit_packet(response, writer)
 
-        tool_final_result = tool_runner.tool_final_result()
-        emit_packet(tool_final_result, writer)
-    except Exception as e:
-        raise ToolCallException(
-            f"Error during tool call for {tool.display_name}: {e}"
-        ) from e
+    tool_final_result = tool_runner.tool_final_result()
+    emit_packet(tool_final_result, writer)
 
     tool_call = ToolCall(name=tool.name, args=tool_args, id=tool_id)
     tool_call_summary = ToolCallSummary(

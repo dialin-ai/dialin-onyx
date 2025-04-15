@@ -5,7 +5,6 @@ import React, {
   forwardRef,
   useContext,
   useCallback,
-  useMemo,
 } from "react";
 import Link from "next/link";
 import {
@@ -51,9 +50,6 @@ import { CSS } from "@dnd-kit/utilities";
 import { CircleX, PinIcon } from "lucide-react";
 import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { TruncatedText } from "@/components/ui/truncatedText";
-import { UserRole } from "@/lib/types";
-import { useDemoModeContext } from "@/components/demo/DemoModeContext";
-import { FiPlus } from "react-icons/fi";
 
 interface HistorySidebarProps {
   liveAssistant?: Persona | null;
@@ -194,9 +190,6 @@ export const HistorySidebar = forwardRef<HTMLDivElement, HistorySidebarProps>(
     const { user, toggleAssistantPinnedStatus } = useUser();
     const { refreshAssistants, pinnedAssistants, setPinnedAssistants } =
       useAssistants();
-    const { isDemoMode } = useDemoModeContext();
-
-    const showExplore = (!user || user.role === UserRole.ADMIN) && !isDemoMode;
 
     const currentChatId = currentChatSession?.id;
 
@@ -234,32 +227,10 @@ export const HistorySidebar = forwardRef<HTMLDivElement, HistorySidebarProps>(
           });
         }
       },
-      [setPinnedAssistants]
+      [setPinnedAssistants, reorderPinnedAssistants]
     );
 
     const combinedSettings = useContext(SettingsContext);
-    
-    const getDaysUntilExpiration = useCallback((user: any) => {
-      if (!user || user.role !== UserRole.DEMO) return null;
-      
-      const demoExpiry = new Date(user.created_at);
-      demoExpiry.setDate(demoExpiry.getDate() + 7);
-      const now = new Date();
-      const diffTime = demoExpiry.getTime() - now.getTime();
-      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-      
-      if (diffDays <= 0) return 0;
-      
-      const diffHours = Math.floor((diffTime % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-      
-      return { days: diffDays, hours: diffHours };
-    }, []);
-
-    const expirationInfo = useMemo(() => {
-      if (!user) return null;
-      return getDaysUntilExpiration(user);
-    }, [user, getDaysUntilExpiration]);
-
     if (!combinedSettings) {
       return null;
     }
@@ -307,13 +278,6 @@ export const HistorySidebar = forwardRef<HTMLDivElement, HistorySidebarProps>(
               explicitlyUntoggle={explicitlyUntoggle}
             />
           </div>
-          
-          {expirationInfo && (
-            <div className="px-4 py-1 text-sm text-yellow-600 dark:text-yellow-500">
-              Trial expires in {expirationInfo.days}d {expirationInfo.hours}h
-            </div>
-          )}
-          
           {page == "chat" && (
             <div className="px-4 px-1 -mx-2 gap-y-1 flex-col text-text-history-sidebar-button flex gap-x-1.5 items-center items-center">
               <Link
@@ -352,18 +316,6 @@ export const HistorySidebar = forwardRef<HTMLDivElement, HistorySidebarProps>(
                   </p>
                 </Link>
               )}
-              <Link
-                className="w-full px-2 py-1 rounded-md items-center hover:bg-accent-background-hovered cursor-pointer transition-all duration-150 flex gap-x-2"
-                href="/admin/documents/sets"
-              >
-                <FiPlus
-                  size={20}
-                  className="flex-none text-text-history-sidebar-button"
-                />
-                <p className="my-auto flex font-normal items-center text-base">
-                  Add Documents
-                </p>
-              </Link>
             </div>
           )}
           <div className="h-full  relative overflow-x-hidden overflow-y-auto">
@@ -432,7 +384,6 @@ export const HistorySidebar = forwardRef<HTMLDivElement, HistorySidebarProps>(
                 </div>
               )}
 
-            {showExplore ?
             <div className="w-full px-4">
               <button
                 onClick={() => setShowAssistantsModal(true)}
@@ -441,7 +392,6 @@ export const HistorySidebar = forwardRef<HTMLDivElement, HistorySidebarProps>(
                 Explore Assistants
               </button>
             </div>
-            : <></>}
 
             <PagesTab
               toggleChatSessionSearchModal={toggleChatSessionSearchModal}
