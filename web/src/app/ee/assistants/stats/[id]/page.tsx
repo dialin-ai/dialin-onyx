@@ -34,12 +34,14 @@ export default async function GalleryPage(props: {
     tags,
     llmProviders,
     defaultAssistantId,
-    inputPrompts
+    inputPrompts,
+    proSearchToggled,
   } = data;
 
   return (
     <ChatProvider
       value={{
+        proSearchToggled,
         inputPrompts,
         chatSessions,
         sidebarInitiallyVisible,

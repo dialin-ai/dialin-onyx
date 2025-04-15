@@ -244,7 +244,6 @@ export function AssistantEditor({
       existingPersona?.llm_model_provider_override ?? null,
     llm_model_version_override:
       existingPersona?.llm_model_version_override ?? null,
-    pro_search_enabled: existingPersona?.pro_search_enabled ?? false,
     starter_messages: existingPersona?.starter_messages?.length
       ? existingPersona.starter_messages
       : [{ message: "" }],
@@ -423,7 +422,6 @@ export function AssistantEditor({
             llm_relevance_filter: Yup.boolean().required(),
             llm_model_version_override: Yup.string().nullable(),
             llm_model_provider_override: Yup.string().nullable(),
-            pro_search_enabled: Yup.boolean().required(),
             starter_messages: Yup.array().of(
               Yup.object().shape({
                 message: Yup.string(),
@@ -1174,33 +1172,6 @@ export function AssistantEditor({
                     <SubLabel>
                       Configure how this assistant performs searches
                     </SubLabel>
-
-                    <div className="min-h-[100px]">
-                      <div className="flex items-center mb-2">
-                        <TooltipProvider delayDuration={0}>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <div>
-                                <SwitchField
-                                  name="pro_search_enabled"
-                                  size="md"
-                                  onCheckedChange={(checked) => {
-                                    setFieldValue("pro_search_enabled", checked);
-                                  }}
-                                />
-                              </div>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <p>Enable pro search for this assistant</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                        <Label className="ml-2">Pro Search</Label>
-                      </div>
-                      <p className="text-sm text-text-dark">
-                        When enabled, this assistant will use AI agents to break down questions and run deep iterative research through promising pathways. This gives more thorough and accurate responses but takes slightly longer.
-                      </p>
-                    </div>
                   </div>
 
                   <Separator />

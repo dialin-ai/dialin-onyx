@@ -165,6 +165,7 @@ export function ChatPage({
     folders,
     shouldShowWelcomeModal,
     refreshChatSessions,
+    proSearchToggled,
   } = useChatContext();
 
   const defaultAssistantIdRaw = searchParams.get(SEARCH_PARAM_NAMES.PERSONA_ID);
@@ -201,7 +202,7 @@ export function ChatPage({
   const enterpriseSettings = settings?.enterpriseSettings;
 
   const [documentSidebarVisible, setDocumentSidebarVisible] = useState(false);
-  const [proSearchEnabled, setProSearchEnabled] = useState(false);
+  const [proSearchEnabled, setProSearchEnabled] = useState(proSearchToggled);
   const toggleProSearch = () => {
     Cookies.set(
       PRO_SEARCH_TOGGLED_COOKIE_NAME,
@@ -1349,7 +1350,7 @@ export function ChatPage({
           )
           .map((document) => document.db_doc_id as number),
         queryOverride,
-        forceSearch: true,
+        forceSearch,
         regenerate: regenerationRequest !== undefined,
         modelProvider:
           modelOverride?.name || llmManager.currentLlm.name || undefined,
@@ -2105,7 +2106,7 @@ export function ChatPage({
         modelOverride,
         messageIdToResend: regenerationRequest.parentMessage.messageId,
         regenerationRequest,
-        forceSearch: true,
+        forceSearch: regenerationRequest.forceSearch,
       });
     };
   }
@@ -3089,6 +3090,8 @@ export function ChatPage({
 
                           <div className="pointer-events-auto w-[95%] mx-auto relative mb-8">
                             <ChatInputBar
+                              proSearchEnabled={proSearchEnabled}
+                              setProSearchEnabled={() => toggleProSearch()}
                               toggleDocumentSidebar={toggleDocumentSidebar}
                               availableSources={sources}
                               availableDocumentSets={documentSets}

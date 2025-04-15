@@ -29,13 +29,17 @@ import UnconfiguredProviderText from "@/components/chat/UnconfiguredProviderText
 import { useAssistants } from "@/components/context/AssistantsContext";
 import { CalendarIcon, TagIcon, XIcon } from "lucide-react";
 import { FilterPopup } from "@/components/search/filtering/FilterPopup";
-import { DocumentSet, Tag, UserRole } from "@/lib/types";
+import { DocumentSet, Tag } from "@/lib/types";
 import { SourceIcon } from "@/components/SourceIcon";
 import { getFormattedDateRangeString } from "@/lib/dateUtils";
 import { truncateString } from "@/lib/utils";
 import { buildImgUrl } from "../files/images/utils";
 import { useUser } from "@/components/user/UserProvider";
+import { AgenticToggle } from "./AgenticToggle";
 import { SettingsContext } from "@/components/settings/SettingsProvider";
+import { LoadingIndicator } from "react-select/dist/declarations/src/components/indicators";
+import { FidgetSpinner } from "react-loader-spinner";
+import { LoadingAnimation } from "@/components/Loading";
 
 const MAX_INPUT_HEIGHT = 200;
 export const SourceChip2 = ({
@@ -191,6 +195,8 @@ interface ChatInputBarProps {
   availableDocumentSets: DocumentSet[];
   availableTags: Tag[];
   retrievalEnabled: boolean;
+  proSearchEnabled: boolean;
+  setProSearchEnabled: (proSearchEnabled: boolean) => void;
 }
 
 export function ChatInputBar({
@@ -219,11 +225,11 @@ export function ChatInputBar({
   availableDocumentSets,
   availableTags,
   llmManager,
+  proSearchEnabled,
+  setProSearchEnabled,
 }: ChatInputBarProps) {
   const { user } = useUser();
   const settings = useContext(SettingsContext);
-  const isDemoUser = user?.role === UserRole.DEMO;
-
   useEffect(() => {
     const textarea = textAreaRef.current;
     if (textarea) {
@@ -752,12 +758,11 @@ export function ChatInputBar({
 
             <div className="flex pr-4 pb-2 justify-between bg-input-background items-center w-full ">
               <div className="space-x-1 flex  px-4 ">
-                {!isDemoUser && (
-                  <ChatInputOption
-                    flexPriority="stiff"
-                    name="File"
-                    Icon={FiPlusCircle}
-                    onClick={() => {
+                <ChatInputOption
+                  flexPriority="stiff"
+                  name="File"
+                  Icon={FiPlusCircle}
+                  onClick={() => {
                     const input = document.createElement("input");
                     input.type = "file";
                     input.multiple = true;
@@ -765,42 +770,47 @@ export function ChatInputBar({
                       const files = Array.from(
                         event?.target?.files || []
                       ) as File[];
-                        if (files.length > 0) {
-                          handleFileUpload(files);
-                        }
-                      };
-                      input.click();
-                    }}
-                    tooltipContent={"Upload files"}
-                  />
-                )}
-
-                {!isDemoUser && (
-                  <LLMPopover
-                    llmProviders={llmProviders}
-                    llmManager={llmManager}
-                    requiresImageGeneration={false}
-                    currentAssistant={selectedAssistant}
-                  />
-                )}
-
-                <FilterPopup
-                  availableSources={availableSources}
-                  availableDocumentSets={availableDocumentSets}
-                  availableTags={availableTags}
-                  filterManager={filterManager}
-                  trigger={
-                    <ChatInputOption
-                      flexPriority="stiff"
-                      name="Filters"
-                      Icon={FiFilter}
-                      toggle
-                      tooltipContent="Filter your search"
-                    />
-                  }
+                      if (files.length > 0) {
+                        handleFileUpload(files);
+                      }
+                    };
+                    input.click();
+                  }}
+                  tooltipContent={"Upload files"}
                 />
+
+                <LLMPopover
+                  llmProviders={llmProviders}
+                  llmManager={llmManager}
+                  requiresImageGeneration={false}
+                  currentAssistant={selectedAssistant}
+                />
+
+                {retrievalEnabled && (
+                  <FilterPopup
+                    availableSources={availableSources}
+                    availableDocumentSets={availableDocumentSets}
+                    availableTags={availableTags}
+                    filterManager={filterManager}
+                    trigger={
+                      <ChatInputOption
+                        flexPriority="stiff"
+                        name="Filters"
+                        Icon={FiFilter}
+                        toggle
+                        tooltipContent="Filter your search"
+                      />
+                    }
+                  />
+                )}
               </div>
               <div className="flex items-center my-auto">
+                {retrievalEnabled && settings?.settings.pro_search_enabled && (
+                  <AgenticToggle
+                    proSearchEnabled={proSearchEnabled}
+                    setProSearchEnabled={setProSearchEnabled}
+                  />
+                )}
                 <button
                   id="onyx-chat-input-send-button"
                   className={`cursor-pointer ${

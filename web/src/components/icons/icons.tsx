@@ -2955,7 +2955,7 @@ export const OnyxLogoTypeIcon = ({
   size = 16,
   className = defaultTailwindCSS,
 }: IconProps) => {
-  const aspectRatio = 1028 / 394; // Calculate the aspect ratio of the original SVG
+  const aspectRatio = 900 / 394; // Calculate the aspect ratio of the original SVG
   const height = size / aspectRatio; // Calculate the height based on the aspect ratio
 
   return (

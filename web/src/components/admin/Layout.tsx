@@ -62,11 +62,13 @@ export async function Layout({ children }: { children: React.ReactNode }) {
     shouldShowWelcomeModal,
     ccPairs,
     inputPrompts,
+    proSearchToggled,
   } = data;
 
   return (
     <ChatProvider
       value={{
+        proSearchToggled,
         inputPrompts,
         chatSessions,
         sidebarInitiallyVisible,
